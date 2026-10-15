@@ -23,31 +23,35 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: التحقق من المفاتيح السرية
+      # اختياري: إذا لم تُضف المفاتيح السرية تُتخطى هذه الخطوات، وتُحدَّث قاعدة البيانات عبر Claude (موصّل Supabase)
+      - name: هل النشر التلقائي لقاعدة البيانات مفعّل؟
+        id: check
         run: |
-          missing=0
-          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
-            if [ -z "${!v}" ]; then
-              echo "::error::المفتاح السري $v غير موجود. أضفه من Settings ← Secrets and variables ← Actions"
-              missing=1
-            fi
-          done
-          exit $missing
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::لا توجد مفاتيح Supabase السرية، فتُنشر ملفات الموقع فقط."
+          fi
 
       - uses: supabase/setup-cli@v3
+        if: steps.check.outputs.enabled == 'true'
         with:
           version: 2.118.0
 
       - name: ربط مشروع Supabase
+        if: steps.check.outputs.enabled == 'true'
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: تحديث قاعدة البيانات
+        if: steps.check.outputs.enabled == 'true'
         run: supabase db push --yes
 
       - name: نشر وظائف الخادم
+        if: steps.check.outputs.enabled == 'true'
         run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID" --use-api
 
       - name: إغلاق التسجيل العام (الحسابات يضيفها مسؤول الموقع فقط)
+        if: steps.check.outputs.enabled == 'true'
         run: |
           curl -sSf -X PATCH "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
