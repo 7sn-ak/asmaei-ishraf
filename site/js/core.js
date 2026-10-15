@@ -106,9 +106,13 @@ function M(){
   for (const a of list) (byStu[a.studentId] || (byStu[a.studentId] = [])).push(a);
   const students = Object.values(S.students).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
   const classes = Array.from(new Set(students.map(s => s.cls).filter(Boolean))).sort(clsCmp);
-  memo = {ver:S.ver, list, byStu, students, classes, ev:null};
+  const demo = {students:students.filter(s => isDemo(s.id)).length, actions:list.filter(a => isDemo(a.id)).length};
+  memo = {ver:S.ver, list, byStu, students, classes, demo, ev:null};
   return memo;
 }
+// البيانات التجريبية: معرّفاتها تبدأ بهذه البادئة (supabase/seed_demo.sql)، وتُحذف بـ supabase/clear_demo.sql
+const DEMO_PREFIX = 'dd000000-';
+const isDemo = id => String(id || '').startsWith(DEMO_PREFIX);
 
 /* ===== الأشخاص والأدوار ===== */
 const me = () => S.staff[S.uid] || null;
@@ -153,11 +157,12 @@ function actLine(a){
   if (a.type === 'suspend' && a.suspendDays) parts.push(daysTxt(a.suspendDays));
   return parts.join(' · ');
 }
+// صف القيد: اسم الطالب كاملاً في السطر الأول، والحالة ثم التفاصيل في السطر الثاني، والوقت على الطرف
 function actRow(a){
   const cls = stuCls(a);
   return `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico(a.type)}
-    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
-    <span class="side">${rowPill(a)}<span class="when">${esc(rel(a.createdAt))}</span></span></button>`;
+    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${rowPill(a)}${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
+    <span class="when">${esc(rel(a.createdAt))}</span></button>`;
 }
 
 /* ===== الأخطاء والحفظ ===== */

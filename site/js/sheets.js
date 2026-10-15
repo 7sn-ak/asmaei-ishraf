@@ -248,7 +248,7 @@ function renderActionBody(){
       <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}</dd></div>
       <div><dt>تاريخ الواقعة</dt><dd>${esc(fmtDay(a.date))}</dd></div>
       ${a.type === 'summon' ? `<div><dt>موعد الحضور</dt><dd>${esc(fmtDay(a.summonDate))}${a.summonTime ? ' · ' + esc(fmtHM(a.summonTime)) : ''}</dd></div>` : ''}
-      ${a.type === 'suspend' ? `<div><dt>المدة</dt><dd>${esc(schoolDaysTxt(a.suspendDays || 1))}</dd></div><div><dt>الفترة</dt><dd>${esc(fmtDay(a.suspendFrom))} — ${esc(fmtDay(a.suspendTo))}</dd></div>` : ''}
+      ${a.type === 'suspend' ? `<div><dt>المدة</dt><dd>${esc(schoolDaysTxt(a.suspendDays || 1))}</dd></div><div><dt>الفترة</dt><dd>${a.suspendFrom === a.suspendTo ? esc(fmtDay(a.suspendFrom)) : esc(fmtDay(a.suspendFrom)) + ' — ' + esc(fmtDay(a.suspendTo))}</dd></div>` : ''}
       ${a.type === 'report' && a.to ? `<div><dt>مرفوع إلى</dt><dd>${esc(ROLES[a.to] || '')}</dd></div>` : ''}
       <div><dt>سجّله</dt><dd>${esc(personName(a.createdBy))}${personTitle(a.createdBy) ? ' · ' + esc(personTitle(a.createdBy)) : ''}<br><span class="meta">${esc(dayLabel(ymd(new Date(a.createdAt))))} ${esc(fmtTime(a.createdAt))}</span></dd></div>
     </dl>
@@ -472,7 +472,9 @@ async function openDeleted(){
   if (!S.sheet || S.sheet.kind !== 'deleted') return;
   $('#sheetBody').innerHTML = rows.length ? `<p class="meta">آخر ما حُذف من القيود والطلاب. يراه مسؤول الموقع فقط.</p><div class="list">${rows.map(r => {
     const d = r.row_data || {};
-    const what = r.table_name === 'actions' ? `${(TYPES[d.type] || {}).label || 'قيد'}: ${d.student_name || ''} — ${d.violation || ''}` : `طالب: ${d.name || ''}${d.cls ? ' (' + d.cls + ')' : ''}`;
+    const what = r.table_name === 'actions' ? `${(TYPES[d.type] || {}).label || 'قيد'}: ${d.student_name || ''} — ${d.violation || ''}`
+      : r.table_name === 'demo' ? `البيانات التجريبية كلها (طلاب: ${d.students || 0} · إجراءات: ${d.actions || 0})`
+      : `طالب: ${d.name || ''}${d.cls ? ' (' + d.cls + ')' : ''}`;
     return `<div class="row"><span class="main"><span class="t1 wrap">${esc(what)}</span><span class="t2">حذفه ${esc(personName(r.deleted_by))} · ${esc(rel(Date.parse(r.deleted_at)))}</span></span></div>`;
   }).join('')}</div>` : '<p class="calm">لم يُحذف أي شيء.</p>';
 }

@@ -6,6 +6,11 @@ function topBanner(){
   if (S.fatal) return `<div class="banner bad">${icon('alert')}<div>${esc(S.fatal)} <button class="link" data-act="reload">إعادة المحاولة</button></div></div>`;
   return '';
 }
+function demoBanner(){
+  const d = M().demo;
+  if (!d.students && !d.actions) return '';
+  return `<div class="banner">${icon('info')}<div>في السجل بيانات تجريبية لتجربة الموقع (طلاب: <span class="num">${d.students}</span> · إجراءات: <span class="num">${d.actions}</span>). الأسماء والأرقام وهمية، وتنحذف كلها قبل التشغيل الفعلي.</div></div>`;
+}
 function onboarding(){
   const m = M();
   if (!S.loaded || m.students.length || m.list.length) return '';
@@ -20,9 +25,11 @@ function onboarding(){
          : `<p>تضيف شؤون الطلبة أو الإدارة قوائم الطلاب، ويمكنك إضافة طالب أثناء تسجيل الإجراء.</p>`}
   </div>`;
 }
+// صف «يحتاج متابعة»: الاسم والتفاصيل كاملة، وأزرار الإجراء السريع تحتها
 function quickRow(a, moves, sub){
-  return `<div class="row"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(sub)}</span></button>
-    ${moves && canRecord() ? `<div class="row-acts">${moves.map(mv => `<button class="btn sm ${mv[2]}" data-act="quick" data-id="${esc(a.id)}" data-to="${mv[0]}">${esc(mv[1])}</button>`).join('')}</div>` : pill(a)}</div>`;
+  const acts = moves && canRecord();
+  return `<div class="row${acts ? ' stacked' : ''}"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(stuName(a))}</span><span class="t2 wrap">${esc(sub)}</span></button>
+    ${acts ? `<div class="row-acts">${moves.map(mv => `<button class="btn sm ${mv[2]}" data-act="quick" data-id="${esc(a.id)}" data-to="${mv[0]}">${esc(mv[1])}</button>`).join('')}</div>` : pill(a)}</div>`;
 }
 function grp(title, n, type){
   return `<div class="grp">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all">عرض الكل</button>` : ''}</div>`;
@@ -32,10 +39,10 @@ function contactRow(a){
   const t = today(), s = stuOf(a), phone = s && s.phone;
   const sub = a.type === 'summon'
     ? `استدعاء · ${shortDay(a.summonDate)}${a.summonTime ? ' ' + fmtHM(a.summonTime) : ''}`
-    : `فصل ${daysTxt(a.suspendDays || 1)} · ${a.suspendFrom <= t ? 'بدأ' : 'يبدأ'} ${shortDay(a.suspendFrom)}`;
-  return `<div class="row"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(sub + ' · ' + stuCls(a))}</span></button>
-    <div class="row-acts">${phone ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(phone))}" aria-label="اتصال بولي أمر ${esc(stuName(a))}">${icon('summon','sm')}</a>` : ''}
-    <button class="btn sm ok" data-act="contact-quick" data-id="${esc(a.id)}">تم التواصل</button></div></div>`;
+    : `فصل ${daysTxt(a.suspendDays || 1)} · ${a.suspendFrom <= t ? 'حتى ' + shortDay(a.suspendTo) : 'يبدأ ' + shortDay(a.suspendFrom)}`;
+  return `<div class="row stacked"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(stuName(a))}</span><span class="t2 wrap">${esc(sub + ' · ' + stuCls(a))}</span></button>
+    <div class="row-acts"><button class="btn sm ok" data-act="contact-quick" data-id="${esc(a.id)}">${icon('check','sm')}تم التواصل</button>
+    ${phone ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(phone))}" aria-label="اتصال بولي أمر ${esc(stuName(a))}">${icon('summon','sm')}اتصال</a>` : '<span class="meta">لا يوجد رقم</span>'}</div></div>`;
 }
 function contactAttention(){
   const due = M().list.filter(needsContact).sort((a, b) => contactKey(a).localeCompare(contactKey(b)));
@@ -57,7 +64,7 @@ function attention(){
     total += pend.length;
     html += grp('فصل بانتظار الاعتماد', pend.length, pend.length > 4 && 'suspend');
     html += pend.slice(0,4).map(a => quickRow(a, isApprover() ? [['approved','اعتماد','ok'],['rejected','رفض','bad']] : null,
-      `${daysTxt(a.suspendDays||1)} · يبدأ ${dayLabel(a.suspendFrom)} · ${stuCls(a)}`)).join('');
+      `${daysTxt(a.suspendDays||1)} · يبدأ ${shortDay(a.suspendFrom)} · ${stuCls(a)}`)).join('');
   }
   if (sums.length) {
     total += sums.length;
@@ -96,7 +103,7 @@ const VIEWS = {
       $('#h-hello', el).innerHTML = `<div class="hello-d">${esc(fmtDay(t))}</div>
         <h1>${hr < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc(personName(S.uid))}</h1>
         <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>`;
-      const b = topBanner() + onboarding();
+      const b = topBanner() + demoBanner() + onboarding();
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
       $('#h-attn', el).innerHTML = attention();
 
@@ -285,7 +292,7 @@ const VIEWS = {
       $('#in-list', el).innerHTML = `<div class="list">${ev.map(x => {
         const t = evText(x), un = (x.e.t||0) > S.seenMark;
         return `<button class="row${un ? ' unread' : ''}" data-act="open-action" data-id="${esc(x.a.id)}">${tico(x.a.type)}
-          <span class="main"><span class="t1">${esc(t.t1)}</span><span class="t2">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
+          <span class="main"><span class="t1 wrap">${esc(t.t1)}</span><span class="t2 wrap">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
       }).join('')}</div>`;
     }
   },
