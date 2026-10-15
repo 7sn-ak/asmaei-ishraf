@@ -5,5 +5,7 @@ window.APP_CONFIG = {
   SUPABASE_KEY: 'sb_publishable_BNLItX30oAwgdIb7SroQIA_eH-WzAjv',
   // يجب أن يطابق USER_DOMAIN في supabase/functions/staff/index.ts
   USER_DOMAIN: 'staff.asmaei.invalid',
-  SCHOOL: 'مدرسة الأصمعي'
+  SCHOOL: 'مدرسة الأصمعي',
+  // الاسم الرسمي في الأوراق المطبوعة
+  SCHOOL_FULL: 'مدرسة الأصمعي الثانوية بنين'
 };

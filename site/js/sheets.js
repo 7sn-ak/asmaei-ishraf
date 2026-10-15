@@ -86,11 +86,10 @@ function closeSheet(){
 function refreshSheet(){
   if (!S.sheet) return;
   if (S.sheet.kind === 'absence') return renderAbsence();
-  if (S.sheet.kind === 'absview') return renderAbsView();
-  if (S.sheet.kind !== 'action') return;
   const body = $('#sheetBody'), ae = document.activeElement;
   if (body && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
-  renderActionBody();
+  if (S.sheet.kind === 'absview') return renderAbsView();
+  if (S.sheet.kind === 'action') renderActionBody();
 }
 
 /* --- record --- */
@@ -579,26 +578,82 @@ async function absUnsend(){
   await refreshAbsence(ABS.day);
   toast('أُلغي الإرسال. عدّل ثم اعتمد من جديد.'); renderAbsence();
 }
-// عرض الغياب المعتمد (شؤون الطلبة): الغائبون في كل فصل مع الاتصال بولي الأمر
+// عرض الغياب المعتمد (شؤون الطلبة): أي يوم، والغائبون في كل فصل مع الاتصال بولي الأمر، والطباعة
+const absSent = day => absList().filter(x => x.day === day && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
+const shiftSchoolDay = (d, dir) => { let x = addDays(d, dir), g = 0; while (isWeekend(x) && g++ < 7) x = addDays(x, dir); return x; };
+const pctOf = (n, d) => d ? (Math.round(n * 1000 / d) / 10) + '%' : '—';
+const absFetched = new Set();   // أيام أقدم من الثلاثين يوماً المحمّلة، تُجلب عند فتحها
 function openAbsenceView(day){
-  openSheet('absview', 'الغياب اليومي', '', '', {day:day || today()});
+  openSheet('absview', 'الغياب اليومي', '', `<button class="btn primary block" id="abs-print" data-act="abs-print">طباعة إحصائية هذا اليوم</button>`, {day:today(), loading:false});
+  absGo(day || today());
+}
+async function absGo(day){
+  if (!S.sheet || S.sheet.kind !== 'absview' || !/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return;
+  if (day > today()) day = today();
+  S.sheet.day = day;
+  if (day < addDays(today(), -30) && !absFetched.has(day)) {
+    S.sheet.loading = true; renderAbsView();
+    try { (await API.absenceFor(day)).forEach(x => { S.absence[x.id] = x; }); absFetched.add(day); S.ver++; }
+    catch(e) { toast(errText(e), {bad:true}); }
+    if (S.sheet && S.sheet.kind === 'absview') S.sheet.loading = false;
+  }
   renderAbsView();
 }
 function renderAbsView(){
   const body = $('#sheetBody'); if (!body || !S.sheet || S.sheet.kind !== 'absview') return;
-  const day = S.sheet.day;
-  const sent = absList().filter(x => x.day === day && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
+  const day = S.sheet.day, t = today(), sent = absSent(day);
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
-  body.innerHTML = `<div class="sec-h"><h2>${esc(fmtDay(day))}</h2>${sent.length ? `<span class="count num">${absCount(sent)} غائب</span>` : ''}</div>` +
-    (sent.length ? sent.map(x => `<section class="abs-cls open"><div class="abs-h"><b>${esc(x.cls)}</b>
-        <span class="meta">${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span><span class="grow"></span>
-        <span class="meta">${esc(personName(x.sentBy))} · ${esc(fmtTime(x.sentAt))}</span></div>
-        ${x.absent.map(a => { const st = S.students[a.id], ph = st && st.phone;
-          return `<div class="row"><button class="main" data-act="open-student" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(a.name)}</span></button>
-            ${ph ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(ph))}" aria-label="اتصال بولي أمر ${esc(a.name)}">${icon('summon','sm')}اتصال</a>` : '<span class="meta">لا يوجد رقم</span>'}</div>`; }).join('')}
-      </section>`).join('') : '<p class="calm">لم يصل غياب هذا اليوم بعد.</p>') +
-    (sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : '');
+  body.innerHTML = `<div class="abs-nav">
+      <input type="date" id="abs-date" value="${esc(day)}" max="${t}" aria-label="اختر التاريخ">
+      <div class="two"><button class="btn sm ghost" data-act="abs-day" data-d="-1">اليوم السابق</button>
+      <button class="btn sm ghost" data-act="abs-day" data-d="1"${day >= t ? ' disabled' : ''}>اليوم التالي</button></div></div>
+    <div class="sec-h"><h2>${esc(fmtDay(day, {weekday:'long', day:'numeric', month:'long', year:'numeric'}))}</h2>
+      ${sent.length ? `<span class="count num">${absCount(sent)} غائب</span>` : ''}${day !== t ? '<button class="link" data-act="abs-day" data-d="0">اليوم</button>' : ''}</div>` +
+    (S.sheet.loading ? '<p class="loading">جارٍ التحميل…</p>'
+      : sent.length ? sent.map(x => `<section class="abs-cls open"><div class="abs-h"><b>${esc(x.cls)}</b>
+          <span class="meta">${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span><span class="grow"></span>
+          <span class="meta">${esc(personName(x.sentBy))} · ${esc(fmtTime(x.sentAt))}</span></div>
+          ${x.absent.map(a => { const st = S.students[a.id], ph = st && st.phone;
+            return `<div class="row"><button class="main" data-act="open-student" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(a.name)}</span></button>
+              ${ph ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(ph))}" aria-label="اتصال بولي أمر ${esc(a.name)}">${icon('summon','sm')}اتصال</a>` : '<span class="meta">لا يوجد رقم</span>'}</div>`; }).join('')}
+        </section>`).join('')
+      : `<p class="calm">${isWeekend(day) ? 'عطلة نهاية الأسبوع.' : day === t ? 'لم يصل غياب اليوم بعد. يصل بعد أن يعتمده المشرفون.' : 'لا يوجد غياب معتمد لهذا اليوم.'}</p>`) +
+    (sent.length && missing.length ? `<p class="meta">لم يصل غياب: ${esc(missing.join('، '))}</p>` : '');
+  const pb = $('#abs-print'); if (pb) pb.disabled = !sent.length || S.sheet.loading;
 }
+// ورقة الطباعة: ملخص اليوم، وجدول الفصول مع أسماء الغائبين، وتوقيع شؤون الطلبة
+function absPrintHtml(day, sent){
+  const C = window.APP_CONFIG || {};
+  const total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs;
+  const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
+  const rows = sent.map(x => `<tr><td>${esc(x.cls)}</td><td>${x.total}</td><td>${x.absent.length}</td><td>${x.total - x.absent.length}</td><td>${pctOf(x.total - x.absent.length, x.total)}</td>
+    <td class="names">${x.absent.length ? x.absent.map(a => esc(a.name)).join('، ') : 'لا غياب'}</td><td>${esc(personName(x.sentBy))}</td></tr>`).join('');
+  return `<div class="pr">
+    <header class="pr-h"><img class="pr-logo" src="icons/logo.png" alt="">
+      <div><div class="pr-school">${esc(C.SCHOOL_FULL || C.SCHOOL || '')}</div><div class="pr-sub">شؤون الطلبة</div></div>
+      <div class="pr-title"><b>إحصائية الغياب اليومي</b><span>${esc(fmtDay(day, {weekday:'long', day:'numeric', month:'long', year:'numeric'}))}</span></div></header>
+    <section class="pr-sum"><div><span>عدد الطلاب</span><b>${total}</b></div><div><span>الغياب</span><b>${abs}</b></div>
+      <div><span>الحضور</span><b>${pres}</b></div><div><span>نسبة الحضور</span><b>${pctOf(pres, total)}</b></div></section>
+    <table class="pr-t"><thead><tr><th>الفصل</th><th>عدد الطلاب</th><th>الغياب</th><th>الحضور</th><th>نسبة الحضور</th><th>أسماء الغائبين</th><th>المشرف</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><th>المجموع</th><th>${total}</th><th>${abs}</th><th>${pres}</th><th>${pctOf(pres, total)}</th><th colspan="2">${sent.length} ${sent.length === 1 ? 'فصل' : sent.length <= 10 ? 'فصول' : 'فصلاً'}</th></tr></tfoot></table>
+    ${missing.length ? `<p class="pr-miss">لم يصل غياب: ${esc(missing.join('، '))}</p>` : ''}
+    <footer class="pr-f"><div>مسؤول شؤون الطلبة<div class="line"></div></div><div>التوقيع<div class="line"></div></div>
+      <div class="pr-printed">طُبعت من سجل الإشراف في ${esc(fmtDay(today(), {day:'numeric', month:'long', year:'numeric'}))} ${esc(fmtTime(Date.now()))} · ${esc(personName(S.uid))}</div></footer>
+  </div>`;
+}
+function printAbsence(){
+  const day = S.sheet && S.sheet.day, sent = day ? absSent(day) : [];
+  if (!sent.length) return toast('لا يوجد غياب معتمد لهذا اليوم.', {bad:true});
+  const root = $('#print-root');
+  root.innerHTML = absPrintHtml(day, sent);
+  document.body.classList.add('printing');
+  // الطباعة مرة واحدة بعد تحميل الشعار
+  let done = false;
+  const img = root.querySelector('img'), go = () => { if (done) return; done = true; setTimeout(() => { try { window.print(); } catch(e) {} }, 60); };
+  if (img && !img.complete) { img.onload = img.onerror = go; setTimeout(go, 1500); } else go();
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('printing'));
 function openPassword(){
   openSheet('pw', 'تغيير كلمة السر', `<div class="form">${pwField('pw-new', 'كلمة السر الجديدة (8 أحرف على الأقل)', 'new-password')}${pwField('pw-again', 'أعد كتابتها', 'new-password')}<p class="err" id="pw-err" hidden></p></div>`,
     `<button class="btn primary block" data-act="pw-save">حفظ كلمة السر</button>`);
@@ -646,6 +701,8 @@ document.addEventListener('click', e => {
     case 'abs-send': absSend(); break;
     case 'abs-unsend': absUnsend(); break;
     case 'open-absence': openAbsenceView(el.dataset.day); break;
+    case 'abs-day': { const d = +el.dataset.d; absGo(d === 0 ? today() : shiftSchoolDay(S.sheet.day, d)); break; }
+    case 'abs-print': printAbsence(); break;
     case 'sf-cls': { const c = el.dataset.c, l = S.sheet.classes, i = l.indexOf(c); if (i >= 0) l.splice(i, 1); else l.push(c); el.setAttribute('aria-pressed', String(i < 0)); break; }
     case 'sf-cls-add': { const inp = $('#sf-cls-new'), c = normCls(inp.value); if (!c) break; if (!S.sheet.classes.includes(c)) S.sheet.classes.push(c); inp.value = ''; $('#sf-cls').innerHTML = classChips(S.sheet.classes); break; }
     case 'back': go(S.params.from || 'students'); break;
@@ -715,6 +772,7 @@ document.addEventListener('change', e => {
   if (el.id === 'l-cls') { S.f.log.cls = el.value; S.f.log.limit = 120; update(); }
   else if (el.id === 'r-vio') { const o = $('#r-other'); o.hidden = el.value !== '__other'; if (!o.hidden) o.focus(); }
   else if (el.id === 'r-days' || el.id === 'r-from') updRange();
+  else if (el.id === 'abs-date') absGo(el.value);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) closeSheet(); });
 

@@ -103,7 +103,7 @@ function absenceToday(){
   const t = today();
   const sent = absList().filter(x => x.day === t && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
-  return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span><button class="link" data-act="open-absence" data-day="${t}">التفاصيل</button>` : ''}</div>
+  return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span>` : ''}<button class="link" data-act="open-absence" data-day="${t}">${sent.length ? 'التفاصيل والطباعة' : 'الأيام السابقة'}</button></div>
     <div class="list">${sent.length ? sent.map(x => `<button class="row" data-act="open-absence" data-day="${esc(x.day)}">
         <span class="main"><span class="t1">${esc(x.cls)} · ${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span>
         <span class="t2 wrap">${esc(x.absent.map(a => a.name).join('، ') || 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
