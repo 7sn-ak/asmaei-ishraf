@@ -1,7 +1,7 @@
 'use strict';
 // شاشات الدخول، والنوافذ السفلية (تسجيل إجراء، تفاصيل القيد، الطلاب، الاستيراد، حسابات الطاقم)، والأحداث، والتشغيل.
 /* ===== شاشات الدخول ===== */
-const gateShell = inner => `<div class="gate"><svg class="seal" aria-hidden="true"><use href="#i-seal"/></svg>${inner}</div>`;
+const gateShell = inner => `<div class="gate"><img class="logo" src="icons/logo.png" alt="شعار مدرسة الأصمعي الثانوية بنين" width="96" height="96">${inner}</div>`;
 // أزرار الأدوار، وتحتها وصف صلاحيات الدور المختار
 const roleButtons = (act, cur) => `<div class="roles" role="group" aria-label="الدور">${ROLE_KEYS.map(k => `<button type="button" data-act="${act}" data-r="${k}" aria-pressed="${cur === k}">${ROLES[k]}</button>`).join('')}</div>
   <p class="note" id="${act}-note" aria-live="polite"${cur ? '' : ' hidden'}>${esc(ROLE_DESC[cur] || '')}</p>`;

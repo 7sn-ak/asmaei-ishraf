@@ -64,7 +64,10 @@ p{margin:0}
 .mast{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--paper);background:color-mix(in srgb,var(--paper) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
 .mast-in{max-width:720px;margin-inline:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:9px;display:flex;align-items:center;gap:10px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
-.seal{width:36px;height:36px;flex:none;color:var(--stamp);fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+/* شعار المدرسة (icons/logo.png). في الوضع الداكن هالة خفيفة تُظهر حدود الدرع */
+.logo{width:40px;height:40px;flex:none;object-fit:contain}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .logo{filter:drop-shadow(0 0 1.5px rgb(255 255 255 / .45))} }
+:root[data-theme="dark"] .logo{filter:drop-shadow(0 0 1.5px rgb(255 255 255 / .45))}
 .wm{font-family:var(--f-display);font-weight:700;font-size:18px;line-height:1.2}
 .wm-sub{font-size:13px;color:var(--ink-2);line-height:1.35}
 .iconbtn{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;color:var(--ink-2)}
@@ -263,7 +266,7 @@ details.more-box[open]{padding-bottom:12px}
 
 /* gate */
 .gate{max-width:460px;margin-inline:auto;display:grid;gap:18px}
-.gate .seal{width:64px;height:64px}
+.gate .logo{width:96px;height:96px}
 .gate h1{font-family:var(--f-display);font-weight:700;font-size:27px}
 .gate p{color:var(--ink-2)}
 

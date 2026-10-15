@@ -2,7 +2,7 @@
 // يجلب أحدث نسخة من الملفات عند توفر الإنترنت، ويستخدم النسخة المحفوظة عند انقطاعه.
 // قاعدة البيانات لا تمر من هنا إطلاقاً.
 const CACHE = 'ishraf-__BUILD__';
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/config.js', 'js/vendor/supabase-2.117.2.js', 'js/api.js', 'js/core.js', 'js/views.js', 'js/sheets.js', 'manifest.webmanifest', 'icons/icon-192.png'];
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/config.js', 'js/vendor/supabase-2.117.2.js', 'js/api.js', 'js/core.js', 'js/views.js', 'js/sheets.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/logo.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
