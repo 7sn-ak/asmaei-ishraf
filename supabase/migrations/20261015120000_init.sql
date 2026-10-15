@@ -5,11 +5,11 @@
 -- ===== صلاحيات الأدوار =====
 -- غيّر هذه القوائم إذا تغيّرت صلاحيات الأدوار، وعدّل الثوابت المقابلة في site/js/core.js
 create or replace function public.approver_roles() returns text[]
-language sql immutable as $$ select array['principal','vp','head']::text[] $$;      -- يعتمدون الفصل
+language sql immutable set search_path = '' as $$ select array['principal','vp','head']::text[] $$;      -- يعتمدون الفصل
 create or replace function public.overseer_roles() returns text[]
-language sql immutable as $$ select array['principal','vp','head']::text[] $$;      -- يحذفون أي قيد ويرون كل التقارير
+language sql immutable set search_path = '' as $$ select array['principal','vp','head']::text[] $$;      -- يحذفون أي قيد ويرون كل التقارير
 create or replace function public.manager_roles() returns text[]
-language sql immutable as $$ select array['principal','vp','head','affairs']::text[] $$; -- يديرون قوائم الطلاب
+language sql immutable set search_path = '' as $$ select array['principal','vp','head','affairs']::text[] $$; -- يديرون قوائم الطلاب
 
 -- ===== الجداول =====
 create table public.staff (
@@ -79,20 +79,20 @@ create table public.prefs (
 
 -- ===== من المستخدم الحالي؟ =====
 create or replace function public.my_role() returns text
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = '' as $$
   select role from public.staff where id = auth.uid() and active
 $$;
 create or replace function public.is_staff() returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.staff where id = auth.uid() and active)
 $$;
 create or replace function public.is_admin() returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.staff where id = auth.uid() and active and is_admin)
 $$;
 -- هل يحتاج الموقع إنشاء حساب المسؤول الأول؟ (تُستدعى قبل تسجيل الدخول)
 create or replace function public.setup_needed() returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = '' as $$
   select not exists (select 1 from public.staff where is_admin and active)
 $$;
 
@@ -128,9 +128,39 @@ create policy prefs_own on public.prefs for all to authenticated
   with check (user_id = auth.uid() and public.is_staff());
 
 create or replace function public.touch_updated_at() returns trigger
-language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
+language plpgsql set search_path = '' as $$ begin new.updated_at := now(); return new; end $$;
 create trigger students_touch before update on public.students
   for each row execute function public.touch_updated_at();
+
+-- ===== أسرار التطبيق: لا يقرؤها إلا الخادم (مثل رمز الإعداد لمرة واحدة) =====
+create table public.app_secrets (
+  key text primary key,
+  value text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.app_secrets enable row level security;
+revoke all on public.app_secrets from anon, authenticated;
+
+-- ===== سجل المحذوفات: من حذف ماذا ومتى (يقرؤه مسؤول الموقع فقط) =====
+create table public.deleted_log (
+  id bigint generated always as identity primary key,
+  table_name text not null,
+  row_data jsonb not null,
+  deleted_by uuid,
+  deleted_at timestamptz not null default now()
+);
+alter table public.deleted_log enable row level security;
+create policy deleted_log_admin_read on public.deleted_log for select to authenticated using (public.is_admin());
+revoke insert, update, delete, truncate on public.deleted_log from anon, authenticated;
+
+create or replace function public.log_delete() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.deleted_log (table_name, row_data, deleted_by) values (tg_table_name, to_jsonb(old), auth.uid());
+  return old;
+end $$;
+create trigger actions_log_delete after delete on public.actions for each row execute function public.log_delete();
+create trigger students_log_delete after delete on public.students for each row execute function public.log_delete();
 
 -- ===== تسجيل إجراء =====
 create or replace function public.create_action(
@@ -148,7 +178,7 @@ create or replace function public.create_action(
   p_new_student_name text default null,
   p_new_student_cls text default null
 ) returns uuid
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = '' as $$
 declare
   v_role text := public.my_role();
   v_sid uuid := p_student_id;
@@ -202,7 +232,7 @@ end $$;
 -- ===== تغيير حالة إجراء =====
 create or replace function public.move_action(p_id uuid, p_to text, p_note text default '')
 returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = '' as $$
 declare
   v_role text := public.my_role();
   a public.actions%rowtype;
@@ -228,7 +258,7 @@ end $$;
 -- ===== تغيير موعد استدعاء =====
 create or replace function public.resched_action(p_id uuid, p_date date, p_time time, p_note text default '')
 returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = '' as $$
 declare
   v_role text := public.my_role();
   v_type text;
@@ -252,6 +282,10 @@ grant execute on function public.create_action(uuid, text, text, text, date, dat
 grant execute on function public.move_action(uuid, text, text) to authenticated;
 grant execute on function public.resched_action(uuid, date, time, text) to authenticated;
 grant execute on function public.setup_needed() to anon, authenticated;
+
+revoke truncate on public.staff, public.students, public.actions, public.action_log, public.prefs from anon, authenticated;
+revoke update, delete on public.action_log from anon, authenticated;
+revoke execute on function public.log_delete() from public, anon, authenticated;
 
 -- ===== التحديث المباشر في الموقع =====
 alter publication supabase_realtime add table public.staff, public.students, public.actions, public.action_log;

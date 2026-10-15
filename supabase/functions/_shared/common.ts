@@ -43,7 +43,7 @@ export function adminClient(): SupabaseClient {
 export const emailFor = (username: string) => `${username}@${USER_DOMAIN}`;
 export const cleanName = (n: unknown) => (typeof n === "string" ? n.trim().replace(/\s+/g, " ") : "");
 export const cleanUsername = (u: unknown) => (typeof u === "string" ? u.trim().toLowerCase() : "");
-export const okPassword = (p: unknown): p is string => typeof p === "string" && p.length >= 6 && p.length <= 72;
+export const okPassword = (p: unknown): p is string => typeof p === "string" && p.length >= 8 && p.length <= 72;
 
 export async function readBody(req: Request): Promise<Record<string, unknown> | null> {
   try {

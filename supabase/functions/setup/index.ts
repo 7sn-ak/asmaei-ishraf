@@ -1,4 +1,8 @@
-// إنشاء حساب المسؤول الأول. تعمل مرة واحدة فقط: ترفض الطلب إذا وُجد مسؤول نشط.
+// إنشاء حساب المسؤول الأول. تعمل مرة واحدة فقط:
+// - ترفض الطلب إذا وُجد مسؤول نشط
+// - وتشترط رمز إعداد لمرة واحدة محفوظاً في app_secrets (key = 'setup_code')، ويُحذف بعد الاستخدام
+// لإنشاء رمز جديد من محرر SQL في Supabase:
+//   insert into public.app_secrets (key, value) values ('setup_code', 'رمز-عشوائي-طويل');
 import {
   adminClient, cleanName, cleanUsername, cors, emailFor, json, okPassword, readBody, ROLES, USERNAME_RE,
 } from "../_shared/common.ts";
@@ -24,6 +28,10 @@ Deno.serve(async (req) => {
   if (countErr) return json({ error: countErr.message }, 500);
   if ((count ?? 0) > 0) return json({ error: "already_set_up" }, 409);
 
+  const code = String(body.code ?? "").trim();
+  const { data: secret } = await db.from("app_secrets").select("value").eq("key", "setup_code").maybeSingle();
+  if (!secret || !code || secret.value !== code) return json({ error: "bad_setup_code" }, 403);
+
   const { data, error } = await db.auth.admin.createUser({
     email: emailFor(username),
     password: body.password as string,
@@ -38,5 +46,6 @@ Deno.serve(async (req) => {
     await db.auth.admin.deleteUser(data.user.id);
     return json({ error: staffErr.message }, 400);
   }
+  await db.from("app_secrets").delete().eq("key", "setup_code");
   return json({ ok: true });
 });

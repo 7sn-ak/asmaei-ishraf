@@ -64,6 +64,7 @@ const API = (function(){
     async setupNeeded(){ return !!(await q(sb.rpc('setup_needed'))); },
     setup(p){ return fn('setup', p); },
     adminUsers(body){ return fn('admin-users', body); },
+    loadDeleted(){ return q(sb.from('deleted_log').select('id,table_name,row_data,deleted_by,deleted_at').order('id', {ascending:false}).limit(100)); },
 
     async loadAll(sinceISO){
       const res = await Promise.all([

@@ -21,11 +21,12 @@ const GATES = {
       </form>`);
   },
   setup(el){
-    el.innerHTML = gateShell(`<h1>إعداد السجل لأول مرة</h1><p>أنشئ حساب مسؤول الموقع. بهذا الحساب تضيف حسابات الطاقم بعد ذلك.</p>
+    el.innerHTML = gateShell(`<h1>إعداد السجل لأول مرة</h1><p>أنشئ حساب مسؤول الموقع. بهذا الحساب تضيف حسابات الطاقم بعد ذلك. رمز الإعداد يستخدم مرة واحدة، فما يقدر أحد غيرك ينشئ هذا الحساب.</p>
       <form class="form" id="setup-form" novalidate>
         <div class="field"><label for="su-name">اسمك كما يراه الزملاء</label><input id="su-name" autocomplete="name" placeholder="مثال: أ. خالد العنزي"></div>
         <div class="field"><label for="su-user">اسم المستخدم (بالإنجليزي)</label><input id="su-user" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" placeholder="khaled"></div>
-        ${pwField('su-pass', 'كلمة السر (6 أحرف على الأقل)', 'new-password')}
+        ${pwField('su-pass', 'كلمة السر (8 أحرف على الأقل)', 'new-password')}
+        <div class="field"><label for="su-code">رمز الإعداد</label><input id="su-code" autocomplete="one-time-code" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" placeholder="يصلك من Claude"></div>
         <div class="field"><span class="lbl">دورك في المدرسة</span>${roleButtons('su-role', S.setupRole || '')}</div>
         <p class="err" id="su-err" hidden></p>
         <button class="btn primary block" id="su-go" type="submit">إنشاء الحساب والدخول</button>
@@ -44,14 +45,15 @@ async function doLogin(){
 }
 async function doSetup(){
   const err = $('#su-err'), btn = $('#su-go'), fail = m => { err.textContent = m; err.hidden = false; };
-  const name = $('#su-name').value.trim().replace(/\s+/g, ' '), username = $('#su-user').value.trim().toLowerCase(), password = $('#su-pass').value, role = S.setupRole;
+  const name = $('#su-name').value.trim().replace(/\s+/g, ' '), username = $('#su-user').value.trim().toLowerCase(), password = $('#su-pass').value, role = S.setupRole, code = $('#su-code').value.trim();
   err.hidden = true;
   if (name.length < 2) return fail('اكتب اسمك.');
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return fail(ERR.bad_username);
-  if (password.length < 6) return fail(ERR.weak_password);
+  if (password.length < 8) return fail(ERR.weak_password);
   if (!role) return fail('اختر دورك في المدرسة.');
+  if (!code) return fail('اكتب رمز الإعداد.');
   btn.disabled = true; btn.textContent = 'جارٍ الإنشاء…';
-  try { await API.setup({name, username, password, role}); await API.signIn(username, password); const s = await API.session(); await enter(s.user.id); }
+  try { await API.setup({name, username, password, role, code}); await API.signIn(username, password); const s = await API.session(); await enter(s.user.id); }
   catch(e) { fail(errText(e)); }
   finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'إنشاء الحساب والدخول'; } }
 }
@@ -358,7 +360,7 @@ async function runImport(){
 
 /* --- حسابات الطاقم (لمسؤول الموقع) --- */
 function genPassword(){
-  const chars = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint32Array(8));
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint32Array(10));
   let p = ''; for (const x of r) p += chars[x % chars.length]; return p;
 }
 function openStaffNew(){
@@ -377,7 +379,7 @@ async function createStaff(){
   err.hidden = true;
   if (name.length < 2) return fail('اكتب الاسم.');
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return fail(ERR.bad_username);
-  if (password.length < 6) return fail(ERR.weak_password);
+  if (password.length < 8) return fail(ERR.weak_password);
   const btn = $('#sf-go'); btn.disabled = true; btn.textContent = 'جارٍ الإنشاء…';
   try { await API.adminUsers({op:'create', name, username, password, role:S.sheet.role, is_admin:S.sheet.admin}); }
   catch(e) { btn.disabled = false; btn.textContent = 'إنشاء الحساب'; return fail(errText(e)); }
@@ -419,13 +421,24 @@ async function resetStaffPassword(id){
   const password = genPassword();
   if (await save(() => API.adminUsers({op:'password', id, password}))) showCredentials(st.name, st.username, password, 'كلمة سر جديدة');
 }
+async function openDeleted(){
+  openSheet('deleted', 'سجل المحذوفات', '<p class="loading">جارٍ التحميل…</p>', '');
+  let rows;
+  try { rows = await API.loadDeleted(); } catch(e) { if ($('#sheetBody')) $('#sheetBody').innerHTML = `<p class="err">${esc(errText(e))}</p>`; return; }
+  if (!S.sheet || S.sheet.kind !== 'deleted') return;
+  $('#sheetBody').innerHTML = rows.length ? `<p class="meta">آخر ما حُذف من القيود والطلاب. يراه مسؤول الموقع فقط.</p><div class="list">${rows.map(r => {
+    const d = r.row_data || {};
+    const what = r.table_name === 'actions' ? `${(TYPES[d.type] || {}).label || 'قيد'}: ${d.student_name || ''} — ${d.violation || ''}` : `طالب: ${d.name || ''}${d.cls ? ' (' + d.cls + ')' : ''}`;
+    return `<div class="row"><span class="main"><span class="t1 wrap">${esc(what)}</span><span class="t2">حذفه ${esc(personName(r.deleted_by))} · ${esc(rel(Date.parse(r.deleted_at)))}</span></span></div>`;
+  }).join('')}</div>` : '<p class="calm">لم يُحذف أي شيء.</p>';
+}
 function openPassword(){
-  openSheet('pw', 'تغيير كلمة السر', `<div class="form">${pwField('pw-new', 'كلمة السر الجديدة (6 أحرف على الأقل)', 'new-password')}${pwField('pw-again', 'أعد كتابتها', 'new-password')}<p class="err" id="pw-err" hidden></p></div>`,
+  openSheet('pw', 'تغيير كلمة السر', `<div class="form">${pwField('pw-new', 'كلمة السر الجديدة (8 أحرف على الأقل)', 'new-password')}${pwField('pw-again', 'أعد كتابتها', 'new-password')}<p class="err" id="pw-err" hidden></p></div>`,
     `<button class="btn primary block" data-act="pw-save">حفظ كلمة السر</button>`);
 }
 async function savePassword(){
   const a = $('#pw-new').value, b = $('#pw-again').value, err = $('#pw-err'), fail = m => { err.textContent = m; err.hidden = false; };
-  if (a.length < 6) return fail(ERR.weak_password);
+  if (a.length < 8) return fail(ERR.weak_password);
   if (a !== b) return fail('كلمتا السر غير متطابقتين.');
   if (await save(() => API.changePassword(a), 'تغيّرت كلمة السر')) closeSheet();
 }
@@ -490,6 +503,7 @@ document.addEventListener('click', e => {
     case 'signout': API.signOut().catch(() => {}).finally(() => { teardown(); S.authState = 'out'; setGate(); }); break;
     case 'pw-toggle': { const i = document.getElementById(el.dataset.for); if (i) { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? 'إخفاء' : 'إظهار'; } break; }
     case 'pw-open': openPassword(); break;
+    case 'deleted-open': openDeleted(); break;
     case 'pw-save': savePassword(); break;
     case 'su-role': S.setupRole = el.dataset.r; $$('[data-act="su-role"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === S.setupRole))); break;
     case 'staff-new': openStaffNew(); break;

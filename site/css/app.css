@@ -5,6 +5,7 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
 /* Layout: phone-first register — sticky masthead, one 720px column, fixed tab bar with a raised "record" key; detail opens as bottom sheets */
 :root{
   --paper:#F2F4F8; --sheet:#FFFFFF; --sunk:#E8ECF2; --rule:#DCE1EA;

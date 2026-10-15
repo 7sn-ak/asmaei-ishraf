@@ -2,6 +2,8 @@
 // النواة: ثوابت المدرسة، أدوات مساعدة، الحالة، تحميل البيانات، الإشعارات، والتنقل بين الشاشات.
 document.documentElement.setAttribute('dir', 'rtl');
 document.documentElement.setAttribute('lang', 'ar');
+// لا يُفتح الموقع داخل إطار موقع آخر (حماية من الخداع بالنقر)
+if (window.top !== window.self) { try { window.top.location.replace(window.location.href); } catch(e) {} document.documentElement.innerHTML = ''; throw new Error('framed'); }
 
 /* ===== المدرسة: أنواع الإجراءات والحالات والأدوار ===== */
 const TYPES = {
@@ -140,7 +142,8 @@ const ERR = {
   forbidden:'هذا الإجراء للمسؤولين فقط.',
   username_taken:'اسم المستخدم مستخدم من قبل. اختر اسماً آخر.',
   bad_username:'اسم المستخدم بالإنجليزي: حروف صغيرة وأرقام ونقطة أو شرطة، من 3 إلى 30.',
-  weak_password:'كلمة السر لازم تكون 6 أحرف على الأقل.',
+  weak_password:'كلمة السر لازم تكون 8 أحرف على الأقل.',
+  bad_setup_code:'رمز الإعداد غير صحيح. انسخه كما وصلك من Claude.',
   name_required:'اكتب الاسم.',
   cannot_lock_self:'لا يمكنك إيقاف حسابك أو إزالة صلاحية الإدارة عن نفسك.',
   already_set_up:'تم إعداد الموقع من قبل. سجّل دخولك.',
