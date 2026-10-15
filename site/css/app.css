@@ -296,3 +296,20 @@ details.more-box[open]{padding-bottom:12px}
 .install{display:flex;gap:10px;align-items:flex-start}
 .setrow.flush{padding:0;border-top:0}
 .field .code{font-size:15px}
+
+/* الغياب اليومي */
+.stack-s{display:grid;gap:8px}
+.ty-abs{--c:var(--info);--cb:var(--info-bg)}
+.chips.multi{flex-wrap:wrap;overflow:visible}
+.abs-cls{border:1px solid var(--rule);border-radius:var(--r-m);background:var(--sheet);overflow:hidden}
+.abs-h{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:10px 14px;text-align:start}
+.abs-h b{font-size:18px;font-variant-numeric:tabular-nums}
+.abs-cls.open>.abs-h{background:var(--sunk);border-bottom:1px solid var(--rule)}
+.abs-list{display:grid}
+.abs-stu{display:flex;align-items:center;gap:10px;width:100%;min-height:50px;padding:8px 14px;border-top:1px solid var(--rule);text-align:start}
+.abs-stu:first-child{border-top:0}
+.abs-stu:active{background:var(--sunk)}
+.abs-stu[aria-pressed="true"]{background:var(--bad-bg);color:var(--bad);font-weight:600}
+.abs-mark{margin-inline-start:auto;font-size:13px;font-weight:700}
+.abs-names{padding:12px 14px;font-size:15px}
+.abs-none{padding:10px 14px;border-top:1px solid var(--rule)}

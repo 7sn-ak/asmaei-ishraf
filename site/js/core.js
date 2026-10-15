@@ -15,14 +15,15 @@ const TYPES = {
 const TYPE_KEYS = ['pledge','report','summon','suspend'];
 const STATUS = {
   pledge:  {open:{l:'بانتظار التوقيع',tone:'warn'}, signed:{l:'تم التوقيع',tone:'ok'}},
-  report:  {open:{l:'جديد',tone:'warn'}, reviewed:{l:'تمت المراجعة',tone:'ok'}},
+  // التقارير تُحفظ في سجل الطالب فقط (open و reviewed من قيود قديمة)
+  report:  {filed:{l:'في سجل الطالب',tone:'mute'}, open:{l:'في سجل الطالب',tone:'mute'}, reviewed:{l:'في سجل الطالب',tone:'mute'}},
   summon:  {scheduled:{l:'موعد قادم',tone:'info'}, attended:{l:'حضر ولي الأمر',tone:'ok'}, absent:{l:'لم يحضر',tone:'bad'}},
   suspend: {pending:{l:'بانتظار الاعتماد',tone:'warn'}, approved:{l:'معتمد',tone:'ok'}, rejected:{l:'مرفوض',tone:'mute'}}
 };
-const FIRST = {pledge:'open', report:'open', summon:'scheduled', suspend:'pending'};
+const FIRST = {pledge:'open', report:'filed', summon:'scheduled', suspend:'pending'};
 const MOVES = {
   pledge:  {open:[['signed','تم توقيع التعهد','ok']], signed:[['open','إلغاء التوقيع','ghost']]},
-  report:  {open:[['reviewed','تمت المراجعة','ok']], reviewed:[['open','إعادة فتح التقرير','ghost']]},
+  report:  {},
   summon:  {scheduled:[['attended','حضر ولي الأمر','ok'],['absent','لم يحضر','bad']], attended:[['scheduled','إرجاع إلى موعد قادم','ghost']], absent:[['scheduled','إرجاع إلى موعد قادم','ghost']]},
   suspend: {pending:[['approved','اعتماد الفصل','ok'],['rejected','رفض الفصل','bad']], approved:[['pending','إلغاء الاعتماد','ghost']], rejected:[['pending','إعادة إلى الاعتماد','ghost']]}
 };
@@ -33,21 +34,25 @@ const ROLES = {supervisor:'مشرف', head:'المشرف العام', vp:'الو
 const ROLE_KEYS = ['supervisor','head','vp','principal','affairs'];
 const ROLE_ORDER = ['principal','vp','head','affairs','supervisor'];
 const ROLE_DESC = {
-  supervisor:'يسجل الإجراءات، ويرسل طلب الفصل للاعتماد.',
-  head:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
-  vp:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
-  principal:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
-  affairs:'يطّلع على الإجراءات ويتواصل مع أولياء الأمور في الاستدعاء والفصل ويسجل «تم التواصل»، ويدير قوائم الطلاب. لا يسجل إجراءات.'
+  supervisor:'يسجل الإجراءات والغياب اليومي لفصول جناحه، ويرسل طلب الفصل للاعتماد. تظهر له في الرئيسية فصول جناحه فقط.',
+  head:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
+  vp:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
+  principal:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
+  affairs:'يطّلع على الإجراءات ويتواصل مع أولياء الأمور في الاستدعاء والفصل ويسجل «تم التواصل»، ويستقبل الغياب اليومي بعد اعتماده، ويدير قوائم الطلاب. لا يسجل إجراءات.'
 };
 // تطابق الدوال approver_roles و overseer_roles و manager_roles و recorder_roles و contact_roles في قاعدة البيانات
 const APPROVERS = ['principal','vp','head'];   // يعتمدون الفصل
-const OVERSEERS = ['principal','vp','head'];   // يرون كل التقارير ويحذفون أي قيد
+const OVERSEERS = ['principal','vp','head'];   // يحذفون أي قيد ويحددون فصول المشرفين
 const MANAGERS = ['principal','vp','head','affairs']; // يديرون قوائم الطلاب
 const RECORDERS = ['supervisor','head','vp','principal']; // يسجلون الإجراءات ويغيّرون حالاتها
 const CONTACTORS = ['affairs','head','vp','principal'];   // يسجلون التواصل مع ولي الأمر (ومعهم مسؤول الموقع)
 const CONTACT_TYPES = ['summon','suspend'];               // الإجراءات التي يُتواصل فيها مع ولي الأمر
 const VIOLATIONS = ['التأخر الصباحي','الغياب بدون عذر','الهروب من الحصة','الخروج من المدرسة دون إذن','إثارة الفوضى في الفصل','عدم الالتزام بالزي المدرسي','استخدام الهاتف النقال','ألفاظ غير لائقة','الاعتداء على زميل','مشاجرة','الإساءة لمعلم أو موظف','إتلاف ممتلكات المدرسة','التدخين','الغش في الاختبار'];
-const DEFAULT_TYPES = {pledge:true, report:true, summon:true, suspend:true};
+const DEFAULT_TYPES = {pledge:true, summon:true, suspend:true};
+// أنواع يمكن التنبيه عنها (التقارير لا تُرسل لأحد)
+const NOTIFY_TYPES = ['pledge','summon','suspend'];
+// لا تظهر لهم التعهدات في الرئيسية
+const NO_PLEDGES_HOME = ['head','vp'];
 
 /* ===== أدوات ===== */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -90,7 +95,7 @@ const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s <
 
 /* ===== الحالة ===== */
 const S = {
-  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, prefsDoc:null, orphan:{},
+  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, prefsDoc:null, orphan:{},
   loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
   view:'home', params:{}, gate:null, sheet:null, unsub:null,
   f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
@@ -125,6 +130,9 @@ const canContact = () => CONTACTORS.includes(myRole()) || canAdmin();
 // شؤون الطلبة: عملهم في السجل التواصل مع أولياء الأمور
 const contactDuty = () => myRole() === 'affairs';
 const canDelete = a => a.createdBy === S.uid || OVERSEERS.includes(myRole()) || canAdmin();
+// فصول الجناح: للمشرف فقط (غيره يرى كل الفصول). تحددها الإدارة من «المزيد».
+const myClasses = () => { const m = me(); return m && m.role === 'supervisor' && m.classes && m.classes.length ? m.classes.slice().sort(clsCmp) : null; };
+const inScope = a => { const c = myClasses(); return !c || c.includes(stuCls(a)); };
 function prefs(){
   const d = S.prefsDoc || {};
   return {notify:!!d.notify, sound:!!d.sound, lastSeen:d.lastSeen || S.loadAt, types:Object.assign({}, DEFAULT_TYPES, d.types || {})};
@@ -136,10 +144,10 @@ const personTitle = id => { const st = S.staff[id]; return st ? (ROLES[st.role] 
 const stuOf = a => S.students[a.studentId];
 const stuName = a => (stuOf(a) && stuOf(a).name) || a.studentName || 'طالب';
 const stuCls = a => (stuOf(a) && stuOf(a).cls) || a.cls || '';
-const isOpen = a => a.status === FIRST[a.type];
+const isOpen = a => a.type !== 'report' && a.status === FIRST[a.type];
 const activeSusp = sid => (M().byStu[sid] || []).find(a => a.type === 'suspend' && a.status === 'approved' && a.suspendFrom && a.suspendTo && a.suspendFrom <= today() && today() <= a.suspendTo);
 const stInfo = a => ((STATUS[a.type] || {})[a.status]) || {l:a.status || '', tone:'mute'};
-const pill = a => { const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`; };
+const pill = a => { if (a.type === 'report') return ''; const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`; };
 /* التواصل مع ولي الأمر */
 // يمكن تسجيله الآن: استدعاء موعده قائم، أو فصل معتمد (قاعدة البيانات تشترط اعتماد الفصل)
 const contactOpen = a => (a.type === 'summon' && a.status === 'scheduled') || (a.type === 'suspend' && a.status === 'approved');
@@ -172,6 +180,11 @@ const ERR = {
   not_allowed:'لا تملك صلاحية هذا الإجراء.',
   not_approved:'يُسجَّل التواصل في الفصل بعد اعتماده.',
   not_contact_type:'التواصل مع ولي الأمر يُسجَّل في الاستدعاء والفصل فقط.',
+  already_sent:'أُرسل غياب هذا الفصل. ألغِ الإرسال أولاً للتعديل.',
+  student_not_in_class:'أحد الطلاب لم يعد في هذا الفصل. أعد فتح الغياب.',
+  bad_day:'لا يمكن تسجيل الغياب لهذا التاريخ.',
+  bad_class:'اسم الفصل غير صالح.',
+  bad_status:'لا يمكن تغيير حالة هذا القيد.',
   forbidden:'هذا الإجراء للمسؤولين فقط.',
   username_taken:'اسم المستخدم مستخدم من قبل. اختر اسماً آخر.',
   bad_username:'اسم المستخدم بالإنجليزي: حروف صغيرة وأرقام ونقطة أو شرطة، من 3 إلى 30.',
@@ -212,14 +225,15 @@ function setPrefs(patch){
 /* ===== تحميل البيانات والتحديث المباشر ===== */
 async function loadData(){
   const since = new Date(Date.now() - 400 * 864e5).toISOString();
-  const d = await API.loadAll(since);
-  const staff = {}, students = {}, actions = {};
+  const d = await API.loadAll(since, addDays(today(), -30));
+  const staff = {}, students = {}, actions = {}, absence = {};
+  (d.absence || []).forEach(x => { absence[x.id] = x; });
   d.staff.forEach(s => { staff[s.id] = s; });
   d.students.forEach(s => { students[s.id] = s; });
   d.actions.forEach(a => { actions[a.id] = a; });
   d.logs.forEach(l => { const a = actions[l.actionId]; if (a) a.log.push(l); });
   Object.values(actions).forEach(a => a.log.sort((x, y) => x.t - y.t || x.id - y.id));
-  S.staff = staff; S.students = students; S.actions = actions; S.prefsDoc = d.prefs;
+  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.prefsDoc = d.prefs;
   S.loaded = true; S.fatal = ''; S.ver++;
 }
 async function reload(){
@@ -253,6 +267,14 @@ const RT = {
     if (ev === 'DELETE') delete S.staff[oldId]; else if (row) S.staff[row.id] = row;
     S.ver++; setGate();
   },
+  absence(ev, row, oldId){
+    if (ev === 'DELETE') { delete S.absence[oldId]; return bump(); }
+    if (!row) return;
+    const prev = S.absence[row.id];
+    S.absence[row.id] = row;
+    if (row.status === 'sent' && (!prev || prev.status !== 'sent')) absAlert(row);
+    bump();
+  },
   status(st){
     if (st === 'SUBSCRIBED') { if (S.rtDown) { S.rtDown = false; reload(); } }
     else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') S.rtDown = true;
@@ -267,9 +289,9 @@ function relevant(a, e){
   // شؤون الطلبة: كل استدعاء جديد أو موعد جديد، وكل فصل يُعتمد، لأنها تحتاج تواصلاً مع ولي الأمر
   if (contactDuty() && ((a.type === 'summon' && (e.ev === 'created' || e.ev === 'resched')) || (a.type === 'suspend' && e.to === 'approved'))) return true;
   if (e.ev === 'created') {
+    if (a.type === 'report') return false;
     if (a.type === 'suspend' && APPROVERS.includes(role)) return true;
-    if (a.type === 'report' && a.to && a.to === role) return true;
-    return !!prefs().types[a.type];
+    return !!prefs().types[a.type] && inScope(a);
   }
   return false;
 }
@@ -282,12 +304,15 @@ function events(){
   if (m.ev) return m.ev;
   const out = [];
   for (const a of m.list) for (const e of a.log) if (relevant(a, e)) out.push({a, e});
+  if (contactDuty()) out.push.apply(out, absEvents());
   out.sort((x, y) => (y.e.t || 0) - (x.e.t || 0));
   m.ev = out.slice(0, 100);
   return m.ev;
 }
 const unread = () => { const ls = prefs().lastSeen || 0; return events().filter(x => (x.e.t || 0) > ls).length; };
 function evText(x){
+  if (x.abs) return {t1:`وصل غياب ${dayLabel(x.abs.day)}: ${absCount(x.abs.sheets)} غائب في ${x.abs.sheets.length} ${x.abs.sheets.length === 1 ? 'فصل' : 'فصول'}`,
+    t2:'اعتمده ' + personName(x.e.by) + ' · ' + x.abs.sheets.map(s => s.cls).sort(clsCmp).join('، ')};
   const a = x.a, e = x.e, who = personName(e.by), n = stuName(a);
   if (e.ev === 'created') {
     let t1;
@@ -320,7 +345,7 @@ function toast(msg, o){
 }
 function alertEv(x){
   const t = evText(x);
-  toast(t.t1, {sub:t.t2, btn:'فتح', ms:7000, onBtn:() => openAction(x.a.id)});
+  toast(t.t1, {sub:t.t2, btn:'فتح', ms:7000, onBtn:() => x.abs ? openAbsenceView(x.abs.day) : openAction(x.a.id)});
   try { if (navigator.vibrate) navigator.vibrate([70, 50, 70]); } catch(e) {}
   if (prefs().sound) chime();
 }
@@ -343,6 +368,31 @@ function chime(){
 document.addEventListener('pointerdown', () => {
   if (prefs().sound && !S.audio) { try { const C = window.AudioContext || window.webkitAudioContext; if (C) { S.audio = new C(); S.audio.resume(); } } catch(e) {} }
 }, {passive:true});
+
+/* ===== الغياب اليومي ===== */
+const absList = () => Object.values(S.absence);
+const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
+const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
+const rosterOf = cls => M().students.filter(s => s.cls === cls);
+// إشعارات شؤون الطلبة: ما أرسله كل مشرف في يوم واحد يُجمع في إشعار واحد
+function absEvents(){
+  const groups = {};
+  for (const x of absList()) if (x.status === 'sent' && x.sentAt) {
+    const k = x.day + '|' + x.sentBy, g = groups[k] || (groups[k] = {day:x.day, by:x.sentBy, t:0, sheets:[]});
+    g.sheets.push(x); g.t = Math.max(g.t, x.sentAt);
+  }
+  return Object.values(groups).map(g => ({abs:g, e:{t:g.t, by:g.by, ev:'absence'}}));
+}
+let absBuf = [], absTimer = null;
+function absAlert(row){
+  if (!S.loaded || !contactDuty() || Date.now() - (row.sentAt || 0) > 120000) return;
+  absBuf.push(row); clearTimeout(absTimer);
+  absTimer = setTimeout(() => {
+    const rows = absBuf; absBuf = [];
+    if (!prefs().notify || !rows.length) return;
+    alertEv({abs:{day:rows[0].day, by:rows[0].sentBy, sheets:rows}, e:{t:Date.now(), by:rows[0].sentBy}});
+  }, 1200);
+}
 
 /* ===== الشاشات ===== */
 let pendingFrame = false;

@@ -84,7 +84,10 @@ function closeSheet(){
   S.sheet = null;
 }
 function refreshSheet(){
-  if (!S.sheet || S.sheet.kind !== 'action') return;
+  if (!S.sheet) return;
+  if (S.sheet.kind === 'absence') return renderAbsence();
+  if (S.sheet.kind === 'absview') return renderAbsView();
+  if (S.sheet.kind !== 'action') return;
   const body = $('#sheetBody'), ae = document.activeElement;
   if (body && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   renderActionBody();
@@ -152,10 +155,7 @@ function renderRExtra(){
     <div class="field"><label for="r-st">الساعة</label><input id="r-st" type="time" value="08:00"></div></div>`;
   if (t === 'suspend') h = `<div class="two"><div class="field"><label for="r-days">مدة الفصل</label><select id="r-days">${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}">${daysTxt(n)}</option>`).join('')}</select></div>
     <div class="field"><label for="r-from">يبدأ من</label><input id="r-from" type="date" value="${nextSchoolDay()}" min="${today()}"></div></div><p class="note" id="r-range"></p>`;
-  if (t === 'report') {
-    const hasHead = Object.values(S.staff).some(s => s.role === 'head'), def = hasHead ? 'head' : 'vp';
-    h = `<div class="field"><label for="r-to">يُرفع إلى</label><select id="r-to">${OVERSEERS.slice().reverse().map(k => `<option value="${k}"${k === def ? ' selected' : ''}>${ROLES[k]}</option>`).join('')}</select></div>`;
-  }
+  if (t === 'report') h = `<p class="note">يُحفظ التقرير في سجل الطالب، ولا يُرسل لأحد. يراه الطاقم عند فتح ملف الطالب.</p>`;
   if (t === 'pledge') h = `<p class="note">بعد أن يوقّع الطالب على التعهد، افتح القيد واضغط «تم توقيع التعهد».</p>`;
   ex.innerHTML = h;
   if (t === 'suspend') updRange();
@@ -164,7 +164,7 @@ function renderRExtra(){
 function setSaveLabel(){
   const b = $('#r-save'); if (!b) return;
   b.disabled = false;
-  b.textContent = {pledge:'حفظ التعهد', report:'رفع التقرير', summon:'حفظ الاستدعاء', suspend: isApprover() ? 'حفظ الفصل معتمداً' : 'إرسال طلب الفصل للاعتماد'}[R.type];
+  b.textContent = {pledge:'حفظ التعهد', report:'حفظ التقرير', summon:'حفظ الاستدعاء', suspend: isApprover() ? 'حفظ الفصل معتمداً' : 'إرسال طلب الفصل للاعتماد'}[R.type];
 }
 function updRange(){
   const n = +($('#r-days') || {}).value || 1, f = ($('#r-from') || {}).value || nextSchoolDay(), out = $('#r-range');
@@ -193,7 +193,6 @@ async function saveRecord(){
   a.details = $('#r-det').value.trim();
   if (R.type === 'summon') { a.summonDate = $('#r-sd').value; a.summonTime = $('#r-st').value; if (!a.summonDate) return fail('حدّد موعد حضور ولي الأمر.'); }
   if (R.type === 'suspend') { const f = $('#r-from').value; if (!f) return fail('حدّد بداية الفصل.'); a.suspendDays = +$('#r-days').value || 1; a.suspendFrom = firstSchoolDay(f); a.suspendTo = schoolEnd(f, a.suspendDays); }
-  if (R.type === 'report') a.to = $('#r-to').value;
   const btn = $('#r-save'); btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
   const id = await save(() => API.createAction(a));
   if (!id) return setSaveLabel();
@@ -205,7 +204,7 @@ async function saveRecord(){
     const st = await API.getStudent(saved.studentId).catch(() => null);
     if (st) { S.students[st.id] = st; bump(); }
   }
-  const msg = {pledge:'حُفظ التعهد', report:'رُفع التقرير', summon:'حُفظ الاستدعاء', suspend: saved && saved.status === 'approved' ? 'حُفظ الفصل معتمداً' : 'أُرسل طلب الفصل للاعتماد'}[type];
+  const msg = {pledge:'حُفظ التعهد', report:'حُفظ التقرير في سجل الطالب', summon:'حُفظ الاستدعاء', suspend: saved && saved.status === 'approved' ? 'حُفظ الفصل معتمداً' : 'أُرسل طلب الفصل للاعتماد'}[type];
   toast(`${msg}: ${sname}`, {btn:'فتح', onBtn:() => openAction(id)});
 }
 
@@ -233,7 +232,7 @@ function renderActionBody(){
   const openD = $('#ad-rs', body) && $('#ad-rs', body).open, sc = body.scrollTop;
   const stamp = a.type === 'suspend'
     ? (a.status === 'approved' ? '<span class="stamp">معتمد</span>' : a.status === 'rejected' ? '<span class="stamp bad">مرفوض</span>' : '<span class="stamp pend">بانتظار الاعتماد</span>')
-    : pill(a);
+    : a.type === 'report' ? '<span class="pill tone-mute">في سجل الطالب</span>' : pill(a);
   const mv = ((MOVES[a.type] || {})[a.status]) || [];
   let moves = '';
   if (mv.length && canRecord()) {
@@ -249,7 +248,6 @@ function renderActionBody(){
       <div><dt>تاريخ الواقعة</dt><dd>${esc(fmtDay(a.date))}</dd></div>
       ${a.type === 'summon' ? `<div><dt>موعد الحضور</dt><dd>${esc(fmtDay(a.summonDate))}${a.summonTime ? ' · ' + esc(fmtHM(a.summonTime)) : ''}</dd></div>` : ''}
       ${a.type === 'suspend' ? `<div><dt>المدة</dt><dd>${esc(schoolDaysTxt(a.suspendDays || 1))}</dd></div><div><dt>الفترة</dt><dd>${a.suspendFrom === a.suspendTo ? esc(fmtDay(a.suspendFrom)) : esc(fmtDay(a.suspendFrom)) + ' — ' + esc(fmtDay(a.suspendTo))}</dd></div>` : ''}
-      ${a.type === 'report' && a.to ? `<div><dt>مرفوع إلى</dt><dd>${esc(ROLES[a.to] || '')}</dd></div>` : ''}
       <div><dt>سجّله</dt><dd>${esc(personName(a.createdBy))}${personTitle(a.createdBy) ? ' · ' + esc(personTitle(a.createdBy)) : ''}<br><span class="meta">${esc(dayLabel(ymd(new Date(a.createdAt))))} ${esc(fmtTime(a.createdAt))}</span></dd></div>
     </dl>
     ${a.details ? `<div class="field"><span class="lbl">التفاصيل</span><p class="details">${esc(a.details)}</p></div>` : ''}
@@ -408,15 +406,28 @@ function genPassword(){
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint32Array(10));
   let p = ''; for (const x of r) p += chars[x % chars.length]; return p;
 }
+// فصول الجناح في نافذة العضو (للمشرف فقط)
+function classPicker(sel, role){
+  return `<div class="field" id="sf-cls-field"${role === 'supervisor' ? '' : ' hidden'}><span class="lbl">فصول الجناح</span>
+    <div class="chips multi" id="sf-cls">${classChips(sel)}</div>
+    <div class="gen"><input id="sf-cls-new" placeholder="فصل آخر، مثال: 10/4" aria-label="فصل آخر"><button type="button" class="btn ghost sm" data-act="sf-cls-add">إضافة</button></div>
+    <p class="meta">يرى المشرف في الرئيسية إجراءات هذه الفصول فقط، ويسجل غيابها اليومي.</p></div>`;
+}
+function classChips(sel){
+  const all = Array.from(new Set(M().classes.concat(sel))).sort(clsCmp);
+  return all.map(c => `<button type="button" class="chip" data-act="sf-cls" data-c="${esc(c)}" aria-pressed="${sel.includes(c)}">${esc(c)}</button>`).join('')
+    || '<span class="meta">لا توجد فصول بعد. أضف الطلاب أولاً، أو اكتب الفصل.</span>';
+}
 function openStaffNew(){
   const body = `<div class="form">
     <div class="field"><label for="sf-name">الاسم كما يراه الزملاء</label><input id="sf-name" placeholder="مثال: أ. فهد الشمري"></div>
     <div class="field"><label for="sf-user">اسم المستخدم (بالإنجليزي)</label><input id="sf-user" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" placeholder="fahad"></div>
     <div class="field"><label for="sf-pass">كلمة السر</label><div class="gen"><input id="sf-pass" value="${genPassword()}" autocomplete="off" spellcheck="false"><button type="button" class="btn ghost sm" data-act="gen-pw">كلمة أخرى</button></div></div>
     <div class="field"><span class="lbl">الدور</span>${roleButtons('sf-role', 'supervisor')}</div>
+    ${classPicker([], 'supervisor')}
     <div class="setrow flush"><div class="main"><div class="t1">مسؤول الموقع</div><div class="t2 wrap">يضيف الحسابات ويعدّلها. اتركه مطفأ لأغلب الطاقم.</div></div><button class="sw" role="switch" aria-checked="false" data-act="sf-admin" aria-label="مسؤول الموقع"></button></div>
     <p class="err" id="sf-err" hidden></p></div>`;
-  openSheet('staff', 'إضافة عضو للطاقم', body, `<button class="btn primary block" id="sf-go" data-act="staff-create">إنشاء الحساب</button>`, {role:'supervisor', admin:false});
+  openSheet('staff', 'إضافة عضو للطاقم', body, `<button class="btn primary block" id="sf-go" data-act="staff-create">إنشاء الحساب</button>`, {role:'supervisor', admin:false, classes:[]});
 }
 async function createStaff(){
   const err = $('#sf-err'), fail = m => { err.textContent = m; err.hidden = false; };
@@ -426,10 +437,13 @@ async function createStaff(){
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return fail(ERR.bad_username);
   if (password.length < 8) return fail(ERR.weak_password);
   const btn = $('#sf-go'); btn.disabled = true; btn.textContent = 'جارٍ الإنشاء…';
+  const classes = S.sheet.role === 'supervisor' ? S.sheet.classes.slice() : [];
   try { await API.adminUsers({op:'create', name, username, password, role:S.sheet.role, is_admin:S.sheet.admin}); }
   catch(e) { btn.disabled = false; btn.textContent = 'إنشاء الحساب'; return fail(errText(e)); }
   showCredentials(name, username, password, 'أُنشئ الحساب');
-  reload();
+  await reload();
+  const st = Object.values(S.staff).find(x => x.username === username);
+  if (st && classes.length) await save(() => API.setStaffClasses(st.id, classes));
 }
 function showCredentials(name, username, password, title){
   const url = location.href.split('#')[0];
@@ -446,16 +460,21 @@ function openStaff(id){
     <div class="field"><label for="sf-name">الاسم كما يراه الزملاء</label><input id="sf-name" value="${esc(st.name)}"></div>
     <div class="field"><span class="lbl">اسم المستخدم</span><span class="code">${esc(st.username)}</span></div>
     <div class="field"><span class="lbl">الدور</span>${roleButtons('sf-role', st.role)}</div>
+    ${classPicker(st.classes || [], st.role)}
     <div class="setrow flush"><div class="main"><div class="t1">مسؤول الموقع</div><div class="t2 wrap">${self ? 'لا يمكنك إزالة الإدارة عن نفسك.' : 'يضيف الحسابات ويعدّلها.'}</div></div><button class="sw" role="switch" aria-checked="${st.isAdmin}" data-act="sf-admin" aria-label="مسؤول الموقع"${self ? ' disabled' : ''}></button></div>
     <div class="btns"><button class="btn ghost" data-act="staff-pw" data-id="${esc(id)}" data-confirm="اضغط مرة أخرى لتعيين كلمة جديدة">${icon('edit','sm')}تعيين كلمة سر جديدة</button>
     ${self ? '' : (st.active ? `<button class="btn ghost" data-act="staff-active" data-id="${esc(id)}" data-v="0" data-confirm="اضغط مرة أخرى لإيقاف الحساب">إيقاف الحساب</button>` : `<button class="btn ok" data-act="staff-active" data-id="${esc(id)}" data-v="1">إعادة تفعيل الحساب</button>`)}</div>
     ${st.active ? '' : '<p class="meta">الحساب موقوف: لا يقدر صاحبه يدخل، وقيوده السابقة باقية باسمه.</p>'}</div>`;
-  openSheet('staff', st.name, body, `<button class="btn primary block" data-act="staff-save" data-id="${esc(id)}">حفظ</button>`, {role:st.role, admin:st.isAdmin});
+  openSheet('staff', st.name, body, `<button class="btn primary block" data-act="staff-save" data-id="${esc(id)}">حفظ</button>`, {role:st.role, admin:st.isAdmin, classes:(st.classes || []).slice()});
 }
 async function saveStaff(id){
   const name = $('#sf-name').value.trim().replace(/\s+/g, ' ');
   if (name.length < 2) return toast('اكتب الاسم.', {bad:true});
-  if (await save(() => API.adminUsers({op:'update', id, name, role:S.sheet.role, is_admin:S.sheet.admin}), 'حُفظت بيانات العضو')) { closeSheet(); reload(); }
+  const sh = S.sheet, st = S.staff[id] || {};
+  if (!await save(() => API.adminUsers({op:'update', id, name, role:sh.role, is_admin:sh.admin}))) return;
+  const before = (st.classes || []).slice().sort().join('|'), after = sh.classes.slice().sort().join('|');
+  if (sh.role === 'supervisor' && before !== after && !await save(() => API.setStaffClasses(id, sh.classes))) return;
+  toast('حُفظت بيانات العضو'); closeSheet(); reload();
 }
 async function setStaffActive(id, active){
   if (await save(() => API.adminUsers({op:'update', id, active}), active ? 'أُعيد تفعيل الحساب' : 'أُوقف الحساب')) { closeSheet(); reload(); }
@@ -473,10 +492,112 @@ async function openDeleted(){
   $('#sheetBody').innerHTML = rows.length ? `<p class="meta">آخر ما حُذف من القيود والطلاب. يراه مسؤول الموقع فقط.</p><div class="list">${rows.map(r => {
     const d = r.row_data || {};
     const what = r.table_name === 'actions' ? `${(TYPES[d.type] || {}).label || 'قيد'}: ${d.student_name || ''} — ${d.violation || ''}`
-      : r.table_name === 'demo' ? `البيانات التجريبية كلها (طلاب: ${d.students || 0} · إجراءات: ${d.actions || 0})`
+      : r.table_name === 'demo' ? `البيانات التجريبية كلها (طلاب: ${d.students || 0} · إجراءات: ${d.actions || 0}${d.absence ? ' · أوراق غياب: ' + d.absence : ''})`
       : `طالب: ${d.name || ''}${d.cls ? ' (' + d.cls + ')' : ''}`;
     return `<div class="row"><span class="main"><span class="t1 wrap">${esc(what)}</span><span class="t2">حذفه ${esc(personName(r.deleted_by))} · ${esc(rel(Date.parse(r.deleted_at)))}</span></span></div>`;
   }).join('')}</div>` : '<p class="calm">لم يُحذف أي شيء.</p>';
+}
+/* --- الغياب اليومي --- */
+// حالة الغياب المفتوح للتعديل: تبقى بعد إغلاق النافذة حتى يكتمل الحفظ التلقائي
+let ABS = null;
+function openAbsence(day){
+  const cl = myClasses();
+  if (!canRecord()) return toast(ERR.not_allowed, {bad:true});
+  if (!cl) return toast('حدّد فصول جناحك أولاً.', {bad:true});
+  day = day || today();
+  if (!ABS || ABS.day !== day || ABS.classes.join('|') !== cl.join('|')) {
+    const picks = {};
+    cl.forEach(c => { const x = absSheet(day, c); picks[c] = new Set(x ? x.absent.map(a => a.id) : []); });
+    ABS = {day, classes:cl, picks, open:cl.find(c => !absSheet(day, c)) || null, timers:{}, pending:{}, saving:{}};
+  }
+  openSheet('absence', 'الغياب اليومي', '', '<div id="abs-foot" class="stack-s"></div>', {day});
+  renderAbsence();
+}
+function absBlock(c){
+  const x = absSheet(ABS.day, c), set = ABS.picks[c], roster = rosterOf(c), open = ABS.open === c, sent = x && x.status === 'sent';
+  const st = ABS.saving[c] ? 'يُحفظ…' : ABS.pending[c] ? 'لم يُحفظ بعد' : sent ? 'أُرسل' : x ? 'محفوظ' : 'لم يُسجَّل';
+  const tone = sent ? 'ok' : (x && !ABS.pending[c]) ? 'info' : 'mute';
+  const count = set.size ? `${set.size} غائب من ${roster.length}` : x ? 'لا غياب' : `${roster.length} طالب`;
+  let inner = '';
+  if (open) inner = sent ? `<p class="abs-names">${esc(x.absent.map(a => a.name).join('، ') || 'لا غياب')}</p>`
+    : roster.length ? `<div class="abs-list">${roster.map(s => `<button class="abs-stu" data-act="abs-stu" data-cls="${esc(c)}" data-id="${esc(s.id)}" aria-pressed="${set.has(s.id)}">
+        <span>${esc(s.name)}</span><span class="abs-mark">${set.has(s.id) ? 'غائب' : ''}</span></button>`).join('')}</div>
+        ${set.size ? '' : `<div class="abs-none"><button class="btn ok sm" data-act="abs-none" data-cls="${esc(c)}">${icon('check','sm')}لا غياب في ${esc(c)}</button></div>`}`
+    : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>';
+  return `<section class="abs-cls${open ? ' open' : ''}"><button class="abs-h" data-act="abs-cls" data-cls="${esc(c)}" aria-expanded="${open}">
+      <b>${esc(c)}</b><span class="meta">${esc(count)}</span><span class="grow"></span><span class="pill tone-${tone}">${esc(st)}</span></button>${inner}</section>`;
+}
+function renderAbsence(){
+  const body = $('#sheetBody'), foot = $('#abs-foot');
+  if (!ABS || !S.sheet || S.sheet.kind !== 'absence' || !body) return;
+  const sc = body.scrollTop;
+  body.innerHTML = `<p class="meta">${esc(fmtDay(ABS.day))}. اضغط الفصل واختر الغائبين، أو «لا غياب». يُحفظ كل تغيير تلقائياً، ولا يصل لشؤون الطلبة إلا بعد الاعتماد.</p>` +
+    ABS.classes.map(absBlock).join('');
+  body.scrollTop = sc;
+  const xs = ABS.classes.map(c => absSheet(ABS.day, c)).filter(Boolean);
+  const drafts = xs.filter(x => x.status === 'draft'), sent = xs.filter(x => x.status === 'sent');
+  const missing = ABS.classes.filter(c => !absSheet(ABS.day, c) && !ABS.pending[c]);
+  const n = ABS.classes.reduce((k, c) => k + ABS.picks[c].size, 0), waiting = Object.keys(ABS.pending).length + Object.keys(ABS.saving).length;
+  if (drafts.length || waiting) foot.innerHTML = (missing.length ? `<p class="meta">لم يُسجَّل بعد: ${esc(missing.join('، '))}</p>` : '') +
+    `<button class="btn primary block" data-act="abs-send">اعتماد وإرسال لشؤون الطلبة · ${n} غائب</button>`;
+  else if (sent.length) foot.innerHTML = `<p class="meta">أُرسل لشؤون الطلبة ${esc(fmtTime(Math.max.apply(null, sent.map(x => x.sentAt))))}${missing.length ? ' · لم يُسجَّل: ' + esc(missing.join('، ')) : ''}.</p>
+    <button class="btn ghost block" data-act="abs-unsend" data-confirm="اضغط مرة أخرى لإلغاء الإرسال">إلغاء الإرسال للتعديل</button>`;
+  else foot.innerHTML = '<p class="meta">اختر الغائبين في كل فصل أو «لا غياب»، ثم اعتمد.</p>';
+}
+function absToggle(c, id){
+  const x = absSheet(ABS.day, c);
+  if (x && x.status === 'sent') return toast(ERR.already_sent, {bad:true});
+  const set = ABS.picks[c];
+  if (set.has(id)) set.delete(id); else set.add(id);
+  queueAbsSave(c, false); renderAbsence();
+}
+function queueAbsSave(c, now){
+  ABS.pending[c] = true; clearTimeout(ABS.timers[c]);
+  ABS.timers[c] = setTimeout(() => saveAbsClass(c), now ? 0 : 700);
+}
+async function refreshAbsence(day){
+  try { (await API.absenceFor(day)).forEach(x => { S.absence[x.id] = x; }); S.ver++; schedule(); } catch(e) {}
+}
+async function saveAbsClass(c){
+  const st = ABS; if (!st || !st.pending[c]) return true;
+  clearTimeout(st.timers[c]); delete st.pending[c]; st.saving[c] = true; renderAbsence();
+  const ok = await save(() => API.saveAbsence(st.day, c, Array.from(st.picks[c])));
+  delete st.saving[c];
+  if (!ok) st.pending[c] = true;
+  await refreshAbsence(st.day); renderAbsence();
+  return !!ok;
+}
+async function absSend(){
+  for (const c of Object.keys(ABS.pending)) if (!await saveAbsClass(c)) return;
+  const n = await save(() => API.sendAbsence(ABS.day, ABS.classes));
+  if (n === false) return;
+  await refreshAbsence(ABS.day);
+  toast('اعتُمد الغياب وأُرسل لشؤون الطلبة'); renderAbsence();
+}
+async function absUnsend(){
+  if (await save(() => API.unsendAbsence(ABS.day, ABS.classes)) === false) return;
+  await refreshAbsence(ABS.day);
+  toast('أُلغي الإرسال. عدّل ثم اعتمد من جديد.'); renderAbsence();
+}
+// عرض الغياب المعتمد (شؤون الطلبة): الغائبون في كل فصل مع الاتصال بولي الأمر
+function openAbsenceView(day){
+  openSheet('absview', 'الغياب اليومي', '', '', {day:day || today()});
+  renderAbsView();
+}
+function renderAbsView(){
+  const body = $('#sheetBody'); if (!body || !S.sheet || S.sheet.kind !== 'absview') return;
+  const day = S.sheet.day;
+  const sent = absList().filter(x => x.day === day && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
+  const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
+  body.innerHTML = `<div class="sec-h"><h2>${esc(fmtDay(day))}</h2>${sent.length ? `<span class="count num">${absCount(sent)} غائب</span>` : ''}</div>` +
+    (sent.length ? sent.map(x => `<section class="abs-cls open"><div class="abs-h"><b>${esc(x.cls)}</b>
+        <span class="meta">${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span><span class="grow"></span>
+        <span class="meta">${esc(personName(x.sentBy))} · ${esc(fmtTime(x.sentAt))}</span></div>
+        ${x.absent.map(a => { const st = S.students[a.id], ph = st && st.phone;
+          return `<div class="row"><button class="main" data-act="open-student" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(a.name)}</span></button>
+            ${ph ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(ph))}" aria-label="اتصال بولي أمر ${esc(a.name)}">${icon('summon','sm')}اتصال</a>` : '<span class="meta">لا يوجد رقم</span>'}</div>`; }).join('')}
+      </section>`).join('') : '<p class="calm">لم يصل غياب هذا اليوم بعد.</p>') +
+    (sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : '');
 }
 function openPassword(){
   openSheet('pw', 'تغيير كلمة السر', `<div class="form">${pwField('pw-new', 'كلمة السر الجديدة (8 أحرف على الأقل)', 'new-password')}${pwField('pw-again', 'أعد كتابتها', 'new-password')}<p class="err" id="pw-err" hidden></p></div>`,
@@ -517,7 +638,16 @@ document.addEventListener('click', e => {
   const id = el.dataset.id;
   switch (el.dataset.act) {
     case 'go': go(el.dataset.v); break;
-    case 'go-log': S.f.log = {type:el.dataset.type || 'all', status:el.dataset.status || 'all', period:el.dataset.period || 'all', cls:'all', q:'', limit:120}; go('log'); break;
+    case 'go-log': S.f.log = {type:el.dataset.type || 'all', status:el.dataset.status || 'all', period:el.dataset.period || 'all', cls:el.dataset.cls || 'all', q:'', limit:120}; go('log'); break;
+    case 'abs-open': openAbsence(); break;
+    case 'abs-cls': ABS.open = ABS.open === el.dataset.cls ? null : el.dataset.cls; renderAbsence(); break;
+    case 'abs-stu': absToggle(el.dataset.cls, id); break;
+    case 'abs-none': ABS.picks[el.dataset.cls].clear(); queueAbsSave(el.dataset.cls, true); renderAbsence(); break;
+    case 'abs-send': absSend(); break;
+    case 'abs-unsend': absUnsend(); break;
+    case 'open-absence': openAbsenceView(el.dataset.day); break;
+    case 'sf-cls': { const c = el.dataset.c, l = S.sheet.classes, i = l.indexOf(c); if (i >= 0) l.splice(i, 1); else l.push(c); el.setAttribute('aria-pressed', String(i < 0)); break; }
+    case 'sf-cls-add': { const inp = $('#sf-cls-new'), c = normCls(inp.value); if (!c) break; if (!S.sheet.classes.includes(c)) S.sheet.classes.push(c); inp.value = ''; $('#sf-cls').innerHTML = classChips(S.sheet.classes); break; }
     case 'back': go(S.params.from || 'students'); break;
     case 'open-action': openAction(id); break;
     case 'open-student': { const from = S.view === 'student' ? (S.params.from || 'students') : S.view; go('student', {id, from}); break; }
@@ -562,7 +692,7 @@ document.addEventListener('click', e => {
     case 'staff-save': saveStaff(id); break;
     case 'staff-active': setStaffActive(id, el.dataset.v === '1'); break;
     case 'staff-pw': resetStaffPassword(id); break;
-    case 'sf-role': S.sheet.role = el.dataset.r; pickRole('sf-role', S.sheet.role); break;
+    case 'sf-role': { S.sheet.role = el.dataset.r; pickRole('sf-role', S.sheet.role); const f = $('#sf-cls-field'); if (f) f.hidden = S.sheet.role !== 'supervisor'; break; }
     case 'sf-admin': S.sheet.admin = !S.sheet.admin; el.setAttribute('aria-checked', String(S.sheet.admin)); break;
     case 'gen-pw': $('#sf-pass').value = genPassword(); break;
   }
@@ -592,7 +722,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) c
 /* ===== التشغيل ===== */
 function teardown(){
   if (S.unsub) { S.unsub(); S.unsub = null; }
-  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.prefsDoc = null; S.orphan = {};
+  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.prefsDoc = null; S.orphan = {}; ABS = null;
   S.fatal = ''; S.view = 'home'; S.params = {}; S.ver++;
 }
 async function enter(uid){

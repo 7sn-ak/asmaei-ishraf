@@ -31,8 +31,10 @@ function quickRow(a, moves, sub){
   return `<div class="row${acts ? ' stacked' : ''}"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(stuName(a))}</span><span class="t2 wrap">${esc(sub)}</span></button>
     ${acts ? `<div class="row-acts">${moves.map(mv => `<button class="btn sm ${mv[2]}" data-act="quick" data-id="${esc(a.id)}" data-to="${mv[0]}">${esc(mv[1])}</button>`).join('')}</div>` : pill(a)}</div>`;
 }
+// «فصولي» في السجل للمشرف الذي حُددت له فصول جناحه، وإلا كل الفصول
+const scopeCls = () => myClasses() ? 'mine' : 'all';
 function grp(title, n, type){
-  return `<div class="grp">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all">عرض الكل</button>` : ''}</div>`;
+  return `<div class="grp">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all" data-cls="${scopeCls()}">عرض الكل</button>` : ''}</div>`;
 }
 // صف «تواصل مطلوب»: اتصال مباشر بولي الأمر ثم «تم التواصل»
 function contactRow(a){
@@ -53,12 +55,12 @@ function contactAttention(){
 }
 function attention(){
   if (contactDuty()) return contactAttention();
-  const m = M(), role = myRole(), t = today();
-  const pend = m.list.filter(a => a.type==='suspend' && a.status==='pending');
-  const sums = m.list.filter(a => a.type==='summon' && a.status==='scheduled' && a.summonDate && a.summonDate <= t)
+  const role = myRole(), t = today(), list = M().list.filter(inScope);
+  const pend = list.filter(a => a.type==='suspend' && a.status==='pending');
+  const sums = list.filter(a => a.type==='summon' && a.status==='scheduled' && a.summonDate && a.summonDate <= t)
     .sort((a,b) => (a.summonDate + (a.summonTime||'')).localeCompare(b.summonDate + (b.summonTime||'')));
-  const reports = m.list.filter(a => a.type==='report' && a.status==='open' && (OVERSEERS.includes(role) || a.to===role));
-  const pledges = m.list.filter(a => a.type==='pledge' && a.status==='open');
+  // التقارير تُحفظ في سجل الطالب فقط، والتعهدات لا تظهر للمشرف العام والوكيل
+  const pledges = NO_PLEDGES_HOME.includes(role) ? [] : list.filter(a => a.type==='pledge' && a.status==='open');
   let html = '', total = 0;
   if (pend.length) {
     total += pend.length;
@@ -72,11 +74,6 @@ function attention(){
     html += sums.slice(0,5).map(a => quickRow(a, [['attended','حضر','ok'],['absent','لم يحضر','bad']],
       (a.summonDate < t ? 'متأخر · كان الموعد ' + dayLabel(a.summonDate) : 'الساعة ' + (fmtHM(a.summonTime) || '—')) + ' · ' + stuCls(a))).join('');
   }
-  if (reports.length) {
-    total += reports.length;
-    html += grp('تقارير جديدة', reports.length, reports.length > 3 && 'report');
-    html += reports.slice(0,3).map(a => quickRow(a, null, (a.violation||'') + ' · ' + stuCls(a))).join('');
-  }
   if (pledges.length) {
     total += pledges.length;
     html += grp('تعهدات بانتظار التوقيع', pledges.length, pledges.length > 3 && 'pledge');
@@ -86,6 +83,34 @@ function attention(){
     (total ? `<div class="list">${html}</div>` : `<div class="list"><p class="calm">لا يوجد ما يحتاج متابعة الآن.</p></div>`);
 }
 
+/* الغياب اليومي في الرئيسية: بطاقة المشرف، وملخص شؤون الطلبة */
+function absenceCard(){
+  const cl = myClasses(), t = today();
+  const head = `<div class="sec-h"><h2>الغياب اليومي</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
+  if (!cl) return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">حدّد فصول جناحك أولاً</div>
+      <div class="t2 wrap">${canAdmin() ? 'تظهر لك بعدها فصولك فقط في الرئيسية، وتسجل غيابها اليومي.' : 'يحددها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصولك فقط.'}</div></div>
+      ${canAdmin() ? `<button class="btn sm primary" data-act="staff-open" data-id="${esc(S.uid)}">تحديد فصولي</button>` : ''}</div></div>`;
+  const sheets = cl.map(c => absSheet(t, c)).filter(Boolean);
+  const sent = sheets.filter(x => x.status === 'sent'), drafts = sheets.filter(x => x.status === 'draft');
+  const done = sheets.length === cl.length && !drafts.length, n = absCount(sheets);
+  const line = !sheets.length ? 'لم يُسجَّل غياب اليوم بعد'
+    : done ? `أُرسل لشؤون الطلبة ${fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))} · ${n} غائب`
+    : `سُجّل ${sheets.length} من ${cl.length} · ${n} غائب${drafts.length ? ' · لم يُعتمد بعد' : ''}`;
+  return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${esc(line)}</div><div class="t2 wrap">${esc(cl.join(' · '))}</div></div>
+    <button class="btn sm ${done ? 'ghost' : 'primary'}" data-act="abs-open">${!sheets.length ? 'تسجيل الغياب' : done ? 'عرض' : 'إكمال واعتماد'}</button></div></div>`;
+}
+function absenceToday(){
+  const t = today();
+  const sent = absList().filter(x => x.day === t && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
+  const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
+  return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span><button class="link" data-act="open-absence" data-day="${t}">التفاصيل</button>` : ''}</div>
+    <div class="list">${sent.length ? sent.map(x => `<button class="row" data-act="open-absence" data-day="${esc(x.day)}">
+        <span class="main"><span class="t1">${esc(x.cls)} · ${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span>
+        <span class="t2 wrap">${esc(x.absent.map(a => a.name).join('، ') || 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
+      : '<p class="calm">لم يصل غياب اليوم بعد. يصلك هنا بعد أن يعتمده المشرفون.</p>'}</div>
+    ${sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : ''}`;
+}
+
 /* ===== Views ===== */
 const VIEWS = {
   home: {
@@ -93,29 +118,34 @@ const VIEWS = {
       el.innerHTML = `<div class="stack">
         <section class="hello" id="h-hello"></section>
         <div id="h-banner" class="stack"></div>
+        <section class="sec" id="h-abs" hidden></section>
         <section class="sec" id="h-attn"></section>
         <section class="sec" id="h-week"></section>
         <section class="sec" id="h-top"></section>
         <section class="sec" id="h-recent"></section></div>`;
     },
     update(el){
-      const m = M(), t = today(), hr = new Date().getHours();
+      const m = M(), t = today(), hr = new Date().getHours(), cl = myClasses();
+      // المشرف يرى في الرئيسية فصول جناحه فقط
+      const scope = m.list.filter(inScope), sc = scopeCls();
       $('#h-hello', el).innerHTML = `<div class="hello-d">${esc(fmtDay(t))}</div>
         <h1>${hr < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc(personName(S.uid))}</h1>
-        <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>`;
+        <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>${cl ? `<div class="meta">جناحك: ${esc(cl.join(' · '))}</div>` : ''}`;
       const b = topBanner() + demoBanner() + onboarding();
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
+      const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : '';
+      ha.innerHTML = abs; ha.hidden = !abs;
       $('#h-attn', el).innerHTML = attention();
 
-      const ws = weekStart(), wk = m.list.filter(a => (a.date||'') >= ws);
+      const ws = weekStart(), wk = scope.filter(a => (a.date||'') >= ws);
       $('#h-week', el).innerHTML = `<div class="sec-h"><h2>هذا الأسبوع</h2><span class="meta">منذ ${esc(fmtDay(ws))}</span></div>
         <div class="stats">${TYPE_KEYS.map(k => {
           const n = wk.filter(a => a.type===k).length, td = wk.filter(a => a.type===k && a.date===t).length;
-          return `<button class="stat ty-${k}" data-act="go-log" data-type="${k}" data-period="week"><span class="lb">${TYPES[k].label}</span><b>${n}</b><small>اليوم ${td}</small></button>`;
+          return `<button class="stat ty-${k}" data-act="go-log" data-type="${k}" data-period="week" data-cls="${sc}"><span class="lb">${TYPES[k].label}</span><b>${n}</b><small>اليوم ${td}</small></button>`;
         }).join('')}</div>`;
 
       const since = addDays(t, -30), cnt = {};
-      for (const a of m.list) if ((a.date||'') >= since) {
+      for (const a of scope) if ((a.date||'') >= since) {
         const c = cnt[a.studentId] || (cnt[a.studentId] = {a, n:0, by:{}});
         c.n++; c.by[a.type] = (c.by[a.type]||0) + 1;
       }
@@ -125,8 +155,8 @@ const VIEWS = {
           <span class="main"><span class="t1">${esc(stuName(c.a))}</span><span class="t2">${esc(stuCls(c.a))} · ${c.n} إجراءات</span></span>
           <span class="cnts">${TYPE_KEYS.filter(k => c.by[k]).map(k => `<span class="cnt ty-${k}" aria-label="${TYPES[k].label} ${c.by[k]}">${c.by[k]}</span>`).join('')}</span></button>`).join('')}</div>` : '';
 
-      const recent = m.list.slice(0, 8);
-      $('#h-recent', el).innerHTML = `<div class="sec-h"><h2>آخر الإجراءات</h2>${recent.length ? '<button class="link" data-act="go-log" data-period="all">السجل كاملاً</button>' : ''}</div>` +
+      const recent = scope.slice(0, 8);
+      $('#h-recent', el).innerHTML = `<div class="sec-h"><h2>آخر الإجراءات</h2>${recent.length ? `<button class="link" data-act="go-log" data-period="all" data-cls="${sc}">${cl ? 'كل إجراءات فصولي' : 'السجل كاملاً'}</button>` : ''}</div>` +
         (recent.length ? `<div class="list">${recent.map(actRow).join('')}</div>` : `<div class="list"><p class="calm">${S.loaded ? 'لم يُسجَّل أي إجراء بعد.' : 'جارٍ التحميل…'}</p></div>`);
     }
   },
@@ -151,9 +181,11 @@ const VIEWS = {
       $('#l-types', el).innerHTML = chip('type','all','الكل') + TYPE_KEYS.map(k => chip('type', k, TYPES[k].label)).join('');
       $('#l-period', el).innerHTML = chip('period','today','اليوم') + chip('period','week','هذا الأسبوع') + chip('period','month','آخر 30 يوماً') + chip('period','all','كل الفترات');
       $('#l-status', el).innerHTML = chip('status','all','كل الحالات') + chip('status','open','يحتاج متابعة') + chip('status','closed','منتهي') + chip('status','contact','بانتظار التواصل');
-      const sel = $('#l-cls', el), sig = m.classes.join('|') + '#' + f.cls;
+      const mine = myClasses(), sel = $('#l-cls', el), sig = m.classes.join('|') + '#' + (mine || []).join('|') + '#' + f.cls;
+      if (f.cls === 'mine' && !mine) f.cls = 'all';
       if (sel.dataset.sig !== sig) {
-        sel.innerHTML = `<option value="all">كل الفصول</option>` + m.classes.map(c => `<option value="${esc(c)}"${f.cls===c ? ' selected' : ''}>${esc(c)}</option>`).join('');
+        sel.innerHTML = `<option value="all">كل الفصول</option>` + (mine ? `<option value="mine"${f.cls==='mine' ? ' selected' : ''}>فصولي (${esc(mine.join('، '))})</option>` : '') +
+          m.classes.map(c => `<option value="${esc(c)}"${f.cls===c ? ' selected' : ''}>${esc(c)}</option>`).join('');
         sel.dataset.sig = sig;
       }
       const ws = weekStart(), since = addDays(t, -30), q = norm(f.q);
@@ -166,7 +198,7 @@ const VIEWS = {
         if (f.status==='open' && !isOpen(a)) return false;
         if (f.status==='closed' && isOpen(a)) return false;
         if (f.status==='contact' && !needsContact(a)) return false;
-        if (f.cls !== 'all' && stuCls(a) !== f.cls) return false;
+        if (f.cls === 'mine' ? !inScope(a) : (f.cls !== 'all' && stuCls(a) !== f.cls)) return false;
         if (q && !norm(stuName(a) + ' ' + (a.violation||'') + ' ' + (a.details||'')).includes(q)) return false;
         return true;
       });
@@ -281,16 +313,20 @@ const VIEWS = {
       $('#in-prefs', el).innerHTML = `
         <div class="setrow"><div class="main"><div class="t1">التنبيهات الفورية</div><div class="t2 wrap">يظهر تنبيه على الشاشة لحظة تسجيل إجراء جديد أثناء فتحك للسجل.</div></div>${sw('notify','التنبيهات الفورية')}</div>
         ${p.notify ? `<div class="setrow"><div class="main"><div class="t1">صوت مع التنبيه</div><div class="t2 wrap">يعمل بعد أول لمسة على الصفحة، مع اهتزاز في الأجهزة التي تدعمه.</div></div>${sw('sound','صوت مع التنبيه')}</div>
-        <div class="setrow"><div class="main"><div class="t1">نبّهني عن</div><div class="chips">${TYPE_KEYS.map(k => `<button class="chip" data-act="pref-type" data-t="${k}" aria-pressed="${!!p.types[k]}">${TYPES[k].label}</button>`).join('')}</div>
+        <div class="setrow"><div class="main"><div class="t1">نبّهني عن</div><div class="chips">${NOTIFY_TYPES.map(k => `<button class="chip" data-act="pref-type" data-t="${k}" aria-pressed="${!!p.types[k]}">${TYPES[k].label}</button>`).join('')}</div>
           ${isApprover() ? '<div class="t2 wrap">طلبات الفصل تصلك دائماً لأنك تعتمدها.</div>' : ''}
-          ${contactDuty() ? '<div class="t2 wrap">الاستدعاءات وتغيير مواعيدها والفصل المعتمد تصلك دائماً لأنك تتواصل مع أولياء الأمور.</div>' : ''}</div></div>` : ''}`;
+          ${contactDuty() ? '<div class="t2 wrap">الاستدعاءات وتغيير مواعيدها والفصل المعتمد والغياب اليومي تصلك دائماً لأنك تتواصل مع أولياء الأمور.</div>' : ''}
+          ${myClasses() ? '<div class="t2 wrap">تصلك إجراءات فصول جناحك فقط، وكل تحديث على ما سجلته أنت.</div>' : ''}
+          <div class="t2 wrap">التقارير لا تُرسل لأحد، وتُحفظ في سجل الطالب.</div></div></div>` : ''}`;
       const ev = events();
       if (!ev.length) {
-        $('#in-list', el).innerHTML = `<div class="empty"><h3>لا توجد إشعارات</h3><p>${contactDuty() ? 'تظهر هنا الاستدعاءات الجديدة والفصل المعتمد، لتتواصل مع أولياء الأمور.' : 'تظهر هنا الإجراءات الجديدة التي يسجلها الزملاء، وكل تحديث على القيود التي سجلتها أنت.'}</p></div>`;
+        $('#in-list', el).innerHTML = `<div class="empty"><h3>لا توجد إشعارات</h3><p>${contactDuty() ? 'تظهر هنا الاستدعاءات الجديدة والفصل المعتمد والغياب اليومي بعد اعتماده.' : 'تظهر هنا الإجراءات الجديدة التي يسجلها الزملاء، وكل تحديث على القيود التي سجلتها أنت.'}</p></div>`;
         return;
       }
       $('#in-list', el).innerHTML = `<div class="list">${ev.map(x => {
         const t = evText(x), un = (x.e.t||0) > S.seenMark;
+        if (x.abs) return `<button class="row${un ? ' unread' : ''}" data-act="open-absence" data-day="${esc(x.abs.day)}"><span class="tico ty-abs">${icon('users')}</span>
+          <span class="main"><span class="t1 wrap">${esc(t.t1)}</span><span class="t2 wrap">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
         return `<button class="row${un ? ' unread' : ''}" data-act="open-action" data-id="${esc(x.a.id)}">${tico(x.a.type)}
           <span class="main"><span class="t1 wrap">${esc(t.t1)}</span><span class="t2 wrap">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
       }).join('')}</div>`;
@@ -314,7 +350,8 @@ const VIEWS = {
         </section>
         <section class="sec"><div class="sec-h"><h2>الطاقم</h2><span class="count num">${shown.length}</span>${admin ? `<button class="link" data-act="staff-new">+ إضافة عضو</button>` : ''}</div>
           <div class="list">${shown.map(id => { const st = S.staff[id]; const inner = `<span class="avatar">${esc(initial(st.name))}</span>
-            <span class="main"><span class="t1">${esc(st.name)}${id===S.uid ? ' (أنت)' : ''}</span><span class="t2">${esc(ROLES[st.role]||'')}${st.isAdmin ? ' · مسؤول' : ''}${admin ? ' · <span dir="ltr">' + esc(st.username) + '</span>' : ''}${st.active ? '' : ' · موقوف'}</span></span>`;
+            <span class="main"><span class="t1">${esc(st.name)}${id===S.uid ? ' (أنت)' : ''}</span><span class="t2">${esc(ROLES[st.role]||'')}${st.isAdmin ? ' · مسؤول' : ''}${admin ? ' · <span dir="ltr">' + esc(st.username) + '</span>' : ''}${st.active ? '' : ' · موقوف'}</span>
+            ${st.role === 'supervisor' ? `<span class="t2 wrap">${st.classes && st.classes.length ? 'الجناح: ' + esc(st.classes.slice().sort(clsCmp).join('، ')) : 'لم تُحدَّد فصوله بعد'}</span>` : ''}</span>`;
             return admin ? `<button class="row${st.active ? '' : ' off'}" data-act="staff-open" data-id="${esc(id)}">${inner}${icon('edit','sm')}</button>` : `<div class="row">${inner}</div>`; }).join('')}</div>
           ${admin ? `<p class="meta">أضف حساباً لكل زميل، ثم أرسل له رابط الموقع مع اسم المستخدم وكلمة السر. يقدر كل واحد يغيّر كلمة سره بنفسه بعد الدخول.</p>
           <div class="btns"><button class="btn ghost sm" data-act="deleted-open">${icon('trash','sm')}سجل المحذوفات</button></div>` : ''}</section>

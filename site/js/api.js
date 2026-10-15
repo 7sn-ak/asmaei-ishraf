@@ -22,7 +22,9 @@ const API = (function(){
     contactedAt:ms(r.contacted_at), contactedBy:r.contacted_by || '', contactNote:r.contact_note || '', log:[]
   });
   const mapLog = r => ({id:r.id, actionId:r.action_id, t:ms(r.at), by:r.by, ev:r.ev, to:r.to_status || '', note:r.note || ''});
-  const mapStaff = r => ({id:r.id, name:r.name, username:r.username, role:r.role, isAdmin:!!r.is_admin, active:!!r.active});
+  const mapStaff = r => ({id:r.id, name:r.name, username:r.username, role:r.role, isAdmin:!!r.is_admin, active:!!r.active, classes:r.classes || []});
+  const mapAbsence = r => ({id:r.id, day:r.day, cls:r.cls, total:r.total || 0, absent:Array.isArray(r.absent) ? r.absent : [], status:r.status,
+    createdBy:r.created_by, updatedBy:r.updated_by, sentBy:r.sent_by || '', sentAt:ms(r.sent_at), updatedAt:ms(r.updated_at)});
   const mapPrefs = r => r ? {notify:!!r.notify, sound:!!r.sound, types:r.types || {}, lastSeen:ms(r.last_seen)} : null;
 
   function fail(err){
@@ -51,6 +53,8 @@ const API = (function(){
   }
   const ACTION_COLS = '*';
   const LOG_COLS = 'id,action_id,at,by,ev,to_status,note';
+  const ABS_COLS = 'id,day,cls,total,absent,status,created_by,updated_by,sent_by,sent_at,updated_at';
+  const STAFF_COLS = 'id,name,username,role,is_admin,active,classes';
 
   return {
     configured,
@@ -69,16 +73,18 @@ const API = (function(){
     adminUsers(body){ return fn('staff', body); },
     loadDeleted(){ return q(sb.from('deleted_log').select('id,table_name,row_data,deleted_by,deleted_at').order('id', {ascending:false}).limit(100)); },
 
-    async loadAll(sinceISO){
+    async loadAll(sinceISO, absSince){
       const res = await Promise.all([
-        q(sb.from('staff').select('id,name,username,role,is_admin,active')),
+        q(sb.from('staff').select(STAFF_COLS)),
         all(() => sb.from('students').select('id,name,cls,phone,notes,created_by').order('id')),
         all(() => sb.from('actions').select(ACTION_COLS).gte('created_at', sinceISO).order('created_at', {ascending:false})),
         all(() => sb.from('action_log').select(LOG_COLS).gte('at', sinceISO).order('id')),
-        q(sb.from('prefs').select('*').maybeSingle())
+        q(sb.from('prefs').select('*').maybeSingle()),
+        all(() => sb.from('absence_sheets').select(ABS_COLS).gte('day', absSince).order('id'))
       ]);
-      return {staff:res[0].map(mapStaff), students:res[1].map(mapStudent), actions:res[2].map(mapAction), logs:res[3].map(mapLog), prefs:mapPrefs(res[4])};
+      return {staff:res[0].map(mapStaff), students:res[1].map(mapStudent), actions:res[2].map(mapAction), logs:res[3].map(mapLog), prefs:mapPrefs(res[4]), absence:res[5].map(mapAbsence)};
     },
+    async absenceFor(day){ return (await q(sb.from('absence_sheets').select(ABS_COLS).eq('day', day))).map(mapAbsence); },
     async getAction(id){
       const res = await Promise.all([
         q(sb.from('actions').select(ACTION_COLS).eq('id', id).maybeSingle()),
@@ -94,6 +100,7 @@ const API = (function(){
         .on('postgres_changes', {event:'INSERT', schema:'public', table:'action_log'}, p => h.log(mapLog(p.new)))
         .on('postgres_changes', {event:'*', schema:'public', table:'students'}, p => h.student(p.eventType, p.new && p.new.id ? mapStudent(p.new) : null, p.old && p.old.id))
         .on('postgres_changes', {event:'*', schema:'public', table:'staff'}, p => h.staff(p.eventType, p.new && p.new.id ? mapStaff(p.new) : null, p.old && p.old.id))
+        .on('postgres_changes', {event:'*', schema:'public', table:'absence_sheets'}, p => h.absence(p.eventType, p.new && p.new.id ? mapAbsence(p.new) : null, p.old && p.old.id))
         .subscribe(status => { if (h.status) h.status(status); });
       return () => sb.removeChannel(ch);
     },
@@ -110,6 +117,12 @@ const API = (function(){
     async reschedAction(id, date, time, note){ await q(sb.rpc('resched_action', {p_id:id, p_date:date, p_time:time || null, p_note:note || ''})); },
     // تسجيل التواصل مع ولي الأمر في الاستدعاء والفصل، أو إلغاؤه
     async markContact(id, done, note){ await q(sb.rpc('mark_contact', {p_id:id, p_done:!!done, p_note:note || ''})); },
+    // فصول جناح المشرف (لمسؤول الموقع والمشرف العام والوكيل والمدير)
+    async setStaffClasses(id, classes){ await q(sb.rpc('set_staff_classes', {p_id:id, p_classes:classes})); },
+    // الغياب اليومي: حفظ فصل (مسودة)، ثم اعتماد الإرسال لشؤون الطلبة، أو إلغاؤه للتعديل
+    saveAbsence(day, cls, ids){ return q(sb.rpc('save_absence', {p_day:day, p_cls:cls, p_absent:ids})); },
+    sendAbsence(day, classes){ return q(sb.rpc('send_absence', {p_day:day, p_classes:classes})); },
+    unsendAbsence(day, classes){ return q(sb.rpc('unsend_absence', {p_day:day, p_classes:classes})); },
     async deleteAction(id){
       const rows = await q(sb.from('actions').delete().eq('id', id).select('id'));
       if (!rows.length) throw fail({code:'42501', message:'not_allowed'});
