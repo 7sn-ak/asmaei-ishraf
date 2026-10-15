@@ -153,6 +153,12 @@ const API = (function(){
     },
     async savePrefs(p, uid){
       await q(sb.from('prefs').upsert({user_id:uid, notify:!!p.notify, sound:!!p.sound, types:p.types, last_seen:new Date(p.lastSeen || Date.now()).toISOString()}));
-    }
+    },
+
+    // إشعارات الجهاز (Web Push): المفتاح العام، وحفظ اشتراك هذا الجهاز أو إيقافه، وإشعار تجريبي
+    pushKey(){ return q(sb.rpc('push_key')); },
+    async savePush(s){ const k = (s && s.keys) || {}; await q(sb.rpc('save_push', {p_endpoint:s.endpoint, p_p256dh:k.p256dh, p_auth:k.auth})); },
+    async dropPush(endpoint){ await q(sb.rpc('drop_push', {p_endpoint:endpoint})); },
+    testPush(){ return q(sb.rpc('push_test')); }
   };
 })();

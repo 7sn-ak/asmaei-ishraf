@@ -417,3 +417,7 @@ enabled = true
 # وظيفة الخادم staff تتحقق من المستخدم بنفسها (وعمليتا status و setup بدون تسجيل دخول)
 [functions.staff]
 verify_jwt = false
+
+[functions.push]
+# تنبّهها قاعدة البيانات (pg_net) دون مفتاح، ولا تقبل أي محتوى من الطلب: كل ما ترسله تقرؤه من قاعدة البيانات
+verify_jwt = false

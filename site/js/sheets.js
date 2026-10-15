@@ -518,7 +518,7 @@ function absBlock(c){
   const tone = sent ? 'ok' : (x && !ABS.pending[c]) ? 'info' : 'mute';
   const count = set.size ? `${set.size} غائب من ${roster.length}` : x ? 'لا غياب' : `${roster.length} طالب`;
   let inner = '';
-  if (open) inner = sent ? `<p class="abs-names">${esc(x.absent.map(a => a.name).join('، ') || 'لا غياب')}</p>`
+  if (open) inner = sent ? `<p class="abs-names">${nameLines(x.absent, 'لا غياب')}</p>`
     : roster.length ? `<div class="abs-list">${roster.map(s => `<button class="abs-stu" data-act="abs-stu" data-cls="${esc(c)}" data-id="${esc(s.id)}" aria-pressed="${set.has(s.id)}">
         <span>${esc(s.name)}</span><span class="abs-mark">${set.has(s.id) ? 'غائب' : ''}</span></button>`).join('')}</div>
         ${set.size ? '' : `<div class="abs-none"><button class="btn ok sm" data-act="abs-none" data-cls="${esc(c)}">${icon('check','sm')}لا غياب في ${esc(c)}</button></div>`}`
@@ -627,7 +627,7 @@ function absPrintHtml(day, sent){
   const total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs;
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
   const rows = sent.map(x => `<tr><td>${esc(x.cls)}</td><td>${x.total}</td><td>${x.absent.length}</td><td>${x.total - x.absent.length}</td><td>${pctOf(x.total - x.absent.length, x.total)}</td>
-    <td class="names">${x.absent.length ? x.absent.map(a => esc(a.name)).join('، ') : 'لا غياب'}</td><td>${esc(personName(x.sentBy))}</td></tr>`).join('');
+    <td class="names">${x.absent.length ? `<ol>${x.absent.map(a => `<li>${esc(a.name)}</li>`).join('')}</ol>` : 'لا غياب'}</td><td>${esc(personName(x.sentBy))}</td></tr>`).join('');
   return `<div class="pr">
     <header class="pr-h"><img class="pr-logo" src="icons/logo.png" alt="">
       <div><div class="pr-school">${esc(C.SCHOOL_FULL || C.SCHOOL || '')}</div><div class="pr-sub">شؤون الطلبة</div></div>
@@ -729,7 +729,18 @@ document.addEventListener('click', e => {
     case 'stu-import': openImport(); break;
     case 'imp-run': runImport(); break;
     case 'f': setFilter(el.dataset.k, el.dataset.v); break;
-    case 'pref': { const k = el.dataset.k; setPrefs({[k]: !prefs()[k]}); if (k === 'sound' && prefs().sound) chime(); break; }
+    case 'pref': {
+      const k = el.dataset.k, on = !prefs()[k];
+      setPrefs({[k]: on});
+      if (k === 'sound' && on) chime();
+      // تشغيل الإشعارات يفعّلها على هذا الجهاز أيضاً (داخل نفس اللمسة، كما يشترط الآيفون)
+      if (k === 'notify' && on && PUSH.state === 'off') pushEnable();
+      break;
+    }
+    case 'push-on': pushEnable(); break;
+    case 'push-off': pushDisable(); break;
+    case 'push-test': pushTest(); break;
+    case 'push-hint-off': pushHintLater(); update(); break;
     case 'pref-type': { const t = Object.assign({}, prefs().types); t[el.dataset.t] = !t[el.dataset.t]; setPrefs({types:t}); break; }
     case 'markread': S.seenMark = Date.now(); setPrefs({lastSeen:Date.now()}); break;
     case 'more-log': S.f.log.limit += 120; update(); break;
@@ -737,7 +748,8 @@ document.addEventListener('click', e => {
     case 'copy': copyText(el.dataset.text, el); break;
     case 'reload': S.fatal = ''; reload(); break;
     case 'retry-boot': S.authState = 'checking'; setGate(); boot(); break;
-    case 'signout': API.signOut().catch(() => {}).finally(() => { teardown(); S.authState = 'out'; setGate(); }); break;
+    // الخروج يوقف إشعارات هذا الجهاز أولاً، حتى لا تصل إشعاراتك لمن يستخدمه بعدك
+    case 'signout': pushDisable(true).finally(() => API.signOut().catch(() => {}).finally(() => { teardown(); S.authState = 'out'; setGate(); })); break;
     case 'pw-toggle': { const i = document.getElementById(el.dataset.for); if (i) { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? 'إخفاء' : 'إظهار'; } break; }
     case 'pw-open': openPassword(); break;
     case 'deleted-open': openDeleted(); break;
@@ -781,18 +793,20 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) c
 function teardown(){
   if (S.unsub) { S.unsub(); S.unsub = null; }
   S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.prefsDoc = null; S.orphan = {}; ABS = null;
-  S.fatal = ''; S.view = 'home'; S.params = {}; S.ver++;
+  S.fatal = ''; S.view = 'home'; S.params = {}; S.ver++; PUSH.busy = false;
 }
 async function enter(uid){
   S.uid = uid; S.authState = 'in'; S.loadAt = Date.now(); setGate();
   try { await loadData(); } catch(e) { S.fatal = errText(e); }
   if (!S.unsub && S.loaded) S.unsub = API.subscribe(RT);
   setGate();
+  // فُتح الموقع من إشعار: افتح ما يخصه. ثم تحقق من إشعارات هذا الجهاز
+  if (S.loaded) { takeOpen(); pushInit(); }
 }
 async function boot(){
   if (!S.booted) {
     S.booted = true;
-    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
     if (API.configured) API.onAuth(ev => { if (ev === 'SIGNED_OUT' && S.authState === 'in') { teardown(); S.authState = 'out'; setGate(); } });
   }
   if (!API.configured) { setGate(); return; }

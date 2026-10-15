@@ -185,6 +185,9 @@ const ERR = {
   bad_day:'لا يمكن تسجيل الغياب لهذا التاريخ.',
   bad_class:'اسم الفصل غير صالح.',
   bad_status:'لا يمكن تغيير حالة هذا القيد.',
+  too_fast:'انتظر قليلاً ثم جرّب مرة أخرى.',
+  bad_endpoint:'هذا المتصفح يستخدم خدمة إشعارات غير معروفة، فلا تصله الإشعارات والموقع مغلق.',
+  bad_keys:'تعذر تفعيل الإشعارات على هذا الجهاز.',
   forbidden:'هذا الإجراء للمسؤولين فقط.',
   username_taken:'اسم المستخدم مستخدم من قبل. اختر اسماً آخر.',
   bad_username:'اسم المستخدم بالإنجليزي: حروف صغيرة وأرقام ونقطة أو شرطة، من 3 إلى 30.',
@@ -239,6 +242,8 @@ async function loadData(){
 async function reload(){
   try { await loadData(); } catch(e) { S.fatal = errText(e); }
   setGate();
+  // إذا تعذر التحميل أول مرة (مثلاً بلا إنترنت): ما فُتح من إشعار، وحالة إشعارات الجهاز
+  if (S.loaded && S.gate === 'in') { takeOpen(); if (PUSH.state === 'checking') pushInit(); }
 }
 async function refreshAction(id){
   try { const a = await API.getAction(id); if (a) S.actions[id] = a; else delete S.actions[id]; S.ver++; schedule(); } catch(e) {}
@@ -373,6 +378,8 @@ document.addEventListener('pointerdown', () => {
 const absList = () => Object.values(S.absence);
 const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
 const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
+// أسماء الغائبين تحت بعض: سطر لكل اسم
+const nameLines = (list, empty) => list.length ? list.map(a => `<span class="nl">${esc(a.name)}</span>`).join('') : esc(empty);
 const rosterOf = cls => M().students.filter(s => s.cls === cls);
 // إشعارات شؤون الطلبة: ما أرسله كل مشرف في يوم واحد يُجمع في إشعار واحد
 function absEvents(){
@@ -452,7 +459,7 @@ function refreshBadge(){
 function go(v, params){
   S.view = v; S.params = params || {};
   closeSheet();
-  if (v === 'inbox') { S.seenMark = prefs().lastSeen; if (unread() > 0) setPrefs({lastSeen:Date.now()}); }
+  if (v === 'inbox') { S.seenMark = prefs().lastSeen; if (unread() > 0) setPrefs({lastSeen:Date.now()}); pushClearShown(); }
   window.scrollTo(0, 0);
   mount();
 }

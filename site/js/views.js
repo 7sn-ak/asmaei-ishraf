@@ -106,9 +106,33 @@ function absenceToday(){
   return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span>` : ''}<button class="link" data-act="open-absence" data-day="${t}">${sent.length ? 'التفاصيل والطباعة' : 'الأيام السابقة'}</button></div>
     <div class="list">${sent.length ? sent.map(x => `<button class="row" data-act="open-absence" data-day="${esc(x.day)}">
         <span class="main"><span class="t1">${esc(x.cls)} · ${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span>
-        <span class="t2 wrap">${esc(x.absent.map(a => a.name).join('، ') || 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
+        <span class="t2 wrap">${nameLines(x.absent, 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
       : '<p class="calm">لم يصل غياب اليوم بعد. يصلك هنا بعد أن يعتمده المشرفون.</p>'}</div>
     ${sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : ''}`;
+}
+
+/* إشعارات الجهاز (حتى والموقع مغلق): حالة هذا الجهاز في شاشة الإشعارات، وتذكير في الرئيسية */
+function pushRow(){
+  const st = PUSH.state, B = (act, cls, label, extra) => `<button class="btn sm ${cls}" data-act="${act}"${extra || ''}>${label}</button>`;
+  const R = {
+    on: ['تصل لهذا الجهاز حتى والموقع مغلق', 'وتصل كذلك لكل جهاز آخر فعّلتها عليه.', B('push-test', 'ghost', 'تجربة') + B('push-off', 'ghost', 'إيقاف على هذا الجهاز', ' data-confirm="اضغط مرة أخرى للإيقاف"')],
+    off: ['لا تصل لهذا الجهاز والموقع مغلق', 'فعّلها مرة واحدة على كل جهاز تستخدمه، واضغط «سماح» عندما يسألك.',
+      B('push-on', 'primary', PUSH.busy ? 'جارٍ التفعيل…' : 'تفعيل على هذا الجهاز', PUSH.busy ? ' disabled' : '')],
+    denied: ['الإشعارات محظورة لهذا الموقع في المتصفح', 'اسمح بها من إعدادات الموقع في المتصفح (الأذونات ← الإشعارات)، ثم ارجع هنا.', ''],
+    ios: ['على الآيفون: ثبّت الموقع على الشاشة الرئيسية أولاً', 'من Safari: زر المشاركة ثم «إضافة إلى الشاشة الرئيسية». افتح السجل من أيقونته، ثم فعّل الإشعارات من هنا (iOS 16.4 أو أحدث).', ''],
+    unsupported: ['هذا المتصفح لا يدعم الإشعارات والموقع مغلق', 'استخدم Chrome في أندرويد أو الكمبيوتر، أو ثبّت الموقع على الشاشة الرئيسية في الآيفون.', ''],
+    checking: ['جارٍ التحقق من إشعارات هذا الجهاز…', '', '']
+  }[st] || ['جارٍ التحقق من إشعارات هذا الجهاز…', '', ''];
+  const tone = st === 'on' ? 'ok' : st === 'off' ? 'warn' : 'mute';
+  return `<div class="setrow stacked" id="in-push" data-state="${esc(st)}"><span class="dev-ic tone-${tone}">${icon(st === 'on' ? 'check' : 'bell', 'sm')}</span>
+    <div class="main"><div class="t1 wrap">${R[0]}</div>${R[1] ? `<div class="t2 wrap">${R[1]}</div>` : ''}</div>${R[2] ? `<div class="row-acts">${R[2]}</div>` : ''}</div>`;
+}
+function pushHint(){
+  if (!prefs().notify || (PUSH.state !== 'off' && PUSH.state !== 'ios') || pushHintPaused()) return '';
+  const ios = PUSH.state === 'ios';
+  return `<div class="banner hint" id="h-push">${icon('bell')}<div class="grow"><b>الإشعارات لا تصل لهذا الجهاز والموقع مغلق</b>
+    <div class="meta">${ios ? 'ثبّت الموقع على الشاشة الرئيسية من Safari (زر المشاركة ← «إضافة إلى الشاشة الرئيسية»)، وافتحه من أيقونته، ثم فعّلها من الجرس.' : 'فعّلها مرة واحدة لتصلك الاستدعاءات وطلبات الفصل وغيرها حتى والجوال مقفل.'}</div>
+    <div class="btns">${ios ? '' : '<button class="btn sm primary" data-act="push-on">تفعيل على هذا الجهاز</button>'}<button class="btn sm ghost" data-act="push-hint-off">${ios ? 'حسناً' : 'لاحقاً'}</button></div></div></div>`;
 }
 
 /* ===== Views ===== */
@@ -131,7 +155,7 @@ const VIEWS = {
       $('#h-hello', el).innerHTML = `<div class="hello-d">${esc(fmtDay(t))}</div>
         <h1>${hr < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc(personName(S.uid))}</h1>
         <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>${cl ? `<div class="meta">جناحك: ${esc(cl.join(' · '))}</div>` : ''}`;
-      const b = topBanner() + demoBanner() + onboarding();
+      const b = topBanner() + pushHint() + demoBanner() + onboarding();
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
@@ -311,13 +335,14 @@ const VIEWS = {
       const p = prefs();
       const sw = (k, label) => `<button class="sw" role="switch" aria-checked="${!!p[k]}" data-act="pref" data-k="${k}" aria-label="${label}"></button>`;
       $('#in-prefs', el).innerHTML = `
-        <div class="setrow"><div class="main"><div class="t1">التنبيهات الفورية</div><div class="t2 wrap">يظهر تنبيه على الشاشة لحظة تسجيل إجراء جديد أثناء فتحك للسجل.</div></div>${sw('notify','التنبيهات الفورية')}</div>
-        ${p.notify ? `<div class="setrow"><div class="main"><div class="t1">صوت مع التنبيه</div><div class="t2 wrap">يعمل بعد أول لمسة على الصفحة، مع اهتزاز في الأجهزة التي تدعمه.</div></div>${sw('sound','صوت مع التنبيه')}</div>
+        <div class="setrow"><div class="main"><div class="t1">الإشعارات</div><div class="t2 wrap">تنبيه لحظة حدوث ما يخصك: على الشاشة وأنت تتصفح السجل، وعلى جهازك حتى والموقع مغلق بعد تفعيلها عليه.</div></div>${sw('notify','الإشعارات')}</div>
+        ${p.notify ? pushRow() + `<div class="setrow"><div class="main"><div class="t1">صوت مع التنبيه داخل الموقع</div><div class="t2 wrap">يعمل بعد أول لمسة على الصفحة، مع اهتزاز في الأجهزة التي تدعمه. إشعارات الجهاز تتبع صوت الجوال.</div></div>${sw('sound','صوت مع التنبيه')}</div>
         <div class="setrow"><div class="main"><div class="t1">نبّهني عن</div><div class="chips">${NOTIFY_TYPES.map(k => `<button class="chip" data-act="pref-type" data-t="${k}" aria-pressed="${!!p.types[k]}">${TYPES[k].label}</button>`).join('')}</div>
           ${isApprover() ? '<div class="t2 wrap">طلبات الفصل تصلك دائماً لأنك تعتمدها.</div>' : ''}
           ${contactDuty() ? '<div class="t2 wrap">الاستدعاءات وتغيير مواعيدها والفصل المعتمد والغياب اليومي تصلك دائماً لأنك تتواصل مع أولياء الأمور.</div>' : ''}
           ${myClasses() ? '<div class="t2 wrap">تصلك إجراءات فصول جناحك فقط، وكل تحديث على ما سجلته أنت.</div>' : ''}
-          <div class="t2 wrap">التقارير لا تُرسل لأحد، وتُحفظ في سجل الطالب.</div></div></div>` : ''}`;
+          <div class="t2 wrap">التقارير لا تُرسل لأحد، وتُحفظ في سجل الطالب.</div>
+          <div class="t2 wrap">إشعار الجهاز يظهر على شاشة القفل، فلا يُكتب فيه اسم الطالب، وتجد التفاصيل هنا.</div></div></div>` : ''}`;
       const ev = events();
       if (!ev.length) {
         $('#in-list', el).innerHTML = `<div class="empty"><h3>لا توجد إشعارات</h3><p>${contactDuty() ? 'تظهر هنا الاستدعاءات الجديدة والفصل المعتمد والغياب اليومي بعد اعتماده.' : 'تظهر هنا الإجراءات الجديدة التي يسجلها الزملاء، وكل تحديث على القيود التي سجلتها أنت.'}</p></div>`;
@@ -357,7 +382,8 @@ const VIEWS = {
           <div class="btns"><button class="btn ghost sm" data-act="deleted-open">${icon('trash','sm')}سجل المحذوفات</button></div>` : ''}</section>
         ${standalone ? '' : `<section class="sec"><div class="sec-h"><h2>ثبّت الموقع على جوالك</h2></div><div class="list"><div class="setrow"><ol class="steps">
           <li>آيفون: افتح الموقع في Safari، اضغط زر المشاركة، ثم «إضافة إلى الشاشة الرئيسية».</li>
-          <li>أندرويد: افتح الموقع في Chrome، اضغط القائمة ⋮، ثم «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</li></ol></div></div></section>`}
+          <li>أندرويد: افتح الموقع في Chrome، اضغط القائمة ⋮، ثم «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</li>
+          <li>بعد التثبيت فعّل الإشعارات من الجرس أعلى الشاشة، لتصلك حتى والموقع مغلق.</li></ol></div></div></section>`}
         <section class="sec"><div class="sec-h"><h2>عن السجل</h2></div>
           <p class="meta">سجل الإشراف لمدرسة الأصمعي: الطلاب، والتعهدات والتقارير والاستدعاءات والفصل، وملف لكل طالب، والإشعارات. البيانات محفوظة في قاعدة بيانات المدرسة ولا يراها إلا أعضاء الطاقم.</p></section>`;
     }
