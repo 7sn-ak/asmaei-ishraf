@@ -1,0 +1,81 @@
+name: نشر الموقع
+
+# يعمل تلقائياً مع كل تحديث على الفرع main:
+# 1) يحدّث قاعدة البيانات ووظائف الخادم في Supabase
+# 2) ينشر ملفات الموقع على GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    name: قاعدة البيانات ووظائف الخادم
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: التحقق من المفاتيح السرية
+        run: |
+          missing=0
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::المفتاح السري $v غير موجود. أضفه من Settings ← Secrets and variables ← Actions"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.118.0
+
+      - name: ربط مشروع Supabase
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: تحديث قاعدة البيانات
+        run: supabase db push --yes
+
+      - name: نشر وظائف الخادم
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID" --use-api
+
+      - name: إغلاق التسجيل العام (الحسابات يضيفها مسؤول الموقع فقط)
+        run: |
+          curl -sSf -X PATCH "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"disable_signup": true}' > /dev/null
+
+  site:
+    name: الموقع
+    needs: backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: رقم الإصدار (حتى تتحدث الجوالات بالنسخة الجديدة)
+        run: sed -i "s/__BUILD__/${GITHUB_SHA::7}/" site/sw.js
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

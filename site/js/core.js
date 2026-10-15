@@ -1,0 +1,366 @@
+'use strict';
+// النواة: ثوابت المدرسة، أدوات مساعدة، الحالة، تحميل البيانات، الإشعارات، والتنقل بين الشاشات.
+document.documentElement.setAttribute('dir', 'rtl');
+document.documentElement.setAttribute('lang', 'ar');
+
+/* ===== المدرسة: أنواع الإجراءات والحالات والأدوار ===== */
+const TYPES = {
+  pledge:  {label:'تعهد',    long:'تعهد خطي',          icon:'pledge'},
+  report:  {label:'تقرير',   long:'تقرير',             icon:'report'},
+  summon:  {label:'استدعاء', long:'استدعاء ولي الأمر',  icon:'summon'},
+  suspend: {label:'فصل',     long:'فصل مؤقت',          icon:'suspend'}
+};
+const TYPE_KEYS = ['pledge','report','summon','suspend'];
+const STATUS = {
+  pledge:  {open:{l:'بانتظار التوقيع',tone:'warn'}, signed:{l:'تم التوقيع',tone:'ok'}},
+  report:  {open:{l:'جديد',tone:'warn'}, reviewed:{l:'تمت المراجعة',tone:'ok'}},
+  summon:  {scheduled:{l:'موعد قادم',tone:'info'}, attended:{l:'حضر ولي الأمر',tone:'ok'}, absent:{l:'لم يحضر',tone:'bad'}},
+  suspend: {pending:{l:'بانتظار الاعتماد',tone:'warn'}, approved:{l:'معتمد',tone:'ok'}, rejected:{l:'مرفوض',tone:'mute'}}
+};
+const FIRST = {pledge:'open', report:'open', summon:'scheduled', suspend:'pending'};
+const MOVES = {
+  pledge:  {open:[['signed','تم توقيع التعهد','ok']], signed:[['open','إلغاء التوقيع','ghost']]},
+  report:  {open:[['reviewed','تمت المراجعة','ok']], reviewed:[['open','إعادة فتح التقرير','ghost']]},
+  summon:  {scheduled:[['attended','حضر ولي الأمر','ok'],['absent','لم يحضر','bad']], attended:[['scheduled','إرجاع إلى موعد قادم','ghost']], absent:[['scheduled','إرجاع إلى موعد قادم','ghost']]},
+  suspend: {pending:[['approved','اعتماد الفصل','ok'],['rejected','رفض الفصل','bad']], approved:[['pending','إلغاء الاعتماد','ghost']], rejected:[['pending','إعادة إلى الاعتماد','ghost']]}
+};
+const MOVE_PAST = {signed:'أكّد توقيع التعهد', reviewed:'راجع التقرير', attended:'سجّل حضور ولي الأمر', absent:'سجّل عدم حضور ولي الأمر', approved:'اعتمد الفصل', rejected:'رفض الفصل', open:'أعاد فتح القيد', scheduled:'أعاد الاستدعاء إلى موعد قادم', pending:'أعاد الفصل إلى الاعتماد'};
+const DONE = {signed:'تم تأكيد التوقيع', reviewed:'تمت مراجعة التقرير', attended:'سُجّل حضور ولي الأمر', absent:'سُجّل عدم حضور ولي الأمر', approved:'اعتُمد الفصل', rejected:'رُفض الفصل', open:'أُعيد فتح القيد', scheduled:'أُعيد إلى موعد قادم', pending:'أُعيد الفصل إلى الاعتماد'};
+const ROLES = {supervisor:'مشرف', head:'المشرف العام', vp:'الوكيل', principal:'المدير', affairs:'شؤون الطلبة'};
+const ROLE_KEYS = ['supervisor','head','vp','principal','affairs'];
+const ROLE_ORDER = ['principal','vp','head','affairs','supervisor'];
+// تطابق الدوال approver_roles و overseer_roles و manager_roles في قاعدة البيانات
+const APPROVERS = ['principal','vp','head'];   // يعتمدون الفصل
+const OVERSEERS = ['principal','vp','head'];   // يرون كل التقارير ويحذفون أي قيد
+const MANAGERS = ['principal','vp','head','affairs']; // يديرون قوائم الطلاب
+const VIOLATIONS = ['التأخر الصباحي','الغياب بدون عذر','الهروب من الحصة','الخروج من المدرسة دون إذن','إثارة الفوضى في الفصل','عدم الالتزام بالزي المدرسي','استخدام الهاتف النقال','ألفاظ غير لائقة','الاعتداء على زميل','مشاجرة','الإساءة لمعلم أو موظف','إتلاف ممتلكات المدرسة','التدخين','الغش في الاختبار'];
+const DEFAULT_TYPES = {pledge:true, report:true, summon:true, suspend:true};
+
+/* ===== أدوات ===== */
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const AR_DIG = '٠١٢٣٤٥٦٧٨٩', FA_DIG = '۰۱۲۳۴۵۶۷۸۹';
+const latinDigits = s => String(s == null ? '' : s).replace(/[٠-٩]/g, d => AR_DIG.indexOf(d)).replace(/[۰-۹]/g, d => FA_DIG.indexOf(d));
+const norm = s => latinDigits(s).replace(/[ً-ْٰـ]/g, '').replace(/[إأآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').toLowerCase().replace(/\s+/g, ' ').trim();
+const normCls = s => latinDigits(s).trim().replace(/\s*[-\\_.|,،]\s*|\s+/g, '/').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+const clsKey = c => { const m = String(c).match(/^(\d+)\D*(\d+)?/); return m ? [+m[1], +(m[2] || 0)] : [999, 0]; };
+const clsCmp = (a, b) => { const x = clsKey(a), y = clsKey(b); return x[0] - y[0] || x[1] - y[1] || String(a).localeCompare(String(b), 'ar'); };
+const icon = (n, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const initial = n => (String(n || '').trim().replace(/^(ال)/, '')[0] || '؟');
+const code = id => '#' + String(id || '').replace(/-/g, '').slice(-4).toUpperCase();
+const phoneDigits = s => latinDigits(s).replace(/\D/g, '');
+const waNum = s => { const d = phoneDigits(s); if (d.length === 8) return '965' + d; if (d.startsWith('00')) return d.slice(2); return d; };
+const daysTxt = n => n === 1 ? 'يوم واحد' : n === 2 ? 'يومان' : n <= 10 ? `${n} أيام` : `${n} يوماً`;
+const schoolDaysTxt = n => n === 1 ? 'يوم دراسي واحد' : n === 2 ? 'يومان دراسيان' : n <= 10 ? `${n} أيام دراسية` : `${n} يوماً دراسياً`;
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ===== التواريخ (الكويت: الدوام من الأحد إلى الخميس) ===== */
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => ymd(new Date());
+const parseYmd = s => { const p = String(s || '').split('-').map(Number); return new Date(p[0] || 1970, (p[1] || 1) - 1, p[2] || 1); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+const isWeekend = s => { const g = parseYmd(s).getDay(); return g === 5 || g === 6; };
+const firstSchoolDay = s => { let d = s, guard = 0; while (isWeekend(d) && guard++ < 7) d = addDays(d, 1); return d; };
+const nextSchoolDay = () => firstSchoolDay(addDays(today(), 1));
+const schoolEnd = (from, n) => { let d = firstSchoolDay(from), c = 1; while (c < n) { d = addDays(d, 1); if (!isWeekend(d)) c++; } return d; };
+const weekStart = () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return ymd(d); };
+const LOC = 'ar-KW-u-nu-latn';
+const fmtDay = (s, opt) => { if (!s) return '—'; try { return new Intl.DateTimeFormat(LOC, opt || {weekday:'long', day:'numeric', month:'long'}).format(parseYmd(s)); } catch(e) { return s; } };
+const fmtTime = t => { try { return new Intl.DateTimeFormat(LOC, {hour:'numeric', minute:'2-digit'}).format(new Date(t)); } catch(e) { return ''; } };
+const fmtHM = hm => { if (!hm) return ''; const p = hm.split(':').map(Number); const d = new Date(); d.setHours(p[0] || 0, p[1] || 0, 0, 0); return fmtTime(d); };
+const dayLabel = s => { const t = today(); if (s === t) return 'اليوم'; if (s === addDays(t, -1)) return 'أمس'; if (s === addDays(t, 1)) return 'غداً'; return fmtDay(s); };
+const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 60) return 'الآن'; if (s < 3600) return `قبل ${Math.floor(s / 60)} د`; if (s < 86400 && ymd(new Date(t)) === today()) return fmtTime(t); const d = ymd(new Date(t)); return d === addDays(today(), -1) ? 'أمس' : fmtDay(d, {day:'numeric', month:'short'}); };
+
+/* ===== الحالة ===== */
+const S = {
+  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, prefsDoc:null, orphan:{},
+  loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
+  view:'home', params:{}, gate:null, sheet:null, readOnly:false, unsub:null,
+  f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
+      stu:{cls:'all', q:'', sort:'name', limit:150} },
+  seenMark:0, audio:null, prefsQ:Promise.resolve()
+};
+
+let memo = {ver:-1};
+function M(){
+  if (memo.ver === S.ver) return memo;
+  const list = Object.values(S.actions).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const byStu = {};
+  for (const a of list) (byStu[a.studentId] || (byStu[a.studentId] = [])).push(a);
+  const students = Object.values(S.students).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
+  const classes = Array.from(new Set(students.map(s => s.cls).filter(Boolean))).sort(clsCmp);
+  memo = {ver:S.ver, list, byStu, students, classes, ev:null};
+  return memo;
+}
+
+/* ===== الأشخاص والأدوار ===== */
+const me = () => S.staff[S.uid] || null;
+const myRole = () => (me() && me().role) || '';
+const isApprover = () => APPROVERS.includes(myRole());
+const canAdmin = () => !!(me() && me().isAdmin);
+const isManager = () => MANAGERS.includes(myRole()) || canAdmin();
+const canDelete = a => a.createdBy === S.uid || OVERSEERS.includes(myRole()) || canAdmin();
+function prefs(){
+  const d = S.prefsDoc || {};
+  return {notify:!!d.notify, sound:!!d.sound, lastSeen:d.lastSeen || S.loadAt, types:Object.assign({}, DEFAULT_TYPES, d.types || {})};
+}
+const personName = id => { const st = S.staff[id]; return st ? st.name : 'زميل سابق'; };
+const personTitle = id => { const st = S.staff[id]; return st ? (ROLES[st.role] || '') : ''; };
+
+/* ===== الطلاب والإجراءات ===== */
+const stuOf = a => S.students[a.studentId];
+const stuName = a => (stuOf(a) && stuOf(a).name) || a.studentName || 'طالب';
+const stuCls = a => (stuOf(a) && stuOf(a).cls) || a.cls || '';
+const isOpen = a => a.status === FIRST[a.type];
+const activeSusp = sid => (M().byStu[sid] || []).find(a => a.type === 'suspend' && a.status === 'approved' && a.suspendFrom && a.suspendTo && a.suspendFrom <= today() && today() <= a.suspendTo);
+const stInfo = a => ((STATUS[a.type] || {})[a.status]) || {l:a.status || '', tone:'mute'};
+const pill = a => { const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`; };
+const tico = (t, sm) => `<span class="tico ty-${t}">${icon(TYPES[t] ? TYPES[t].icon : 'report', sm ? 'sm' : '')}</span>`;
+const tchip = t => `<span class="tchip ty-${t}">${esc(TYPES[t] ? TYPES[t].label : '')}</span>`;
+function actLine(a){
+  const parts = [TYPES[a.type] && TYPES[a.type].label, a.violation].filter(Boolean);
+  if (a.type === 'summon' && a.summonDate) parts.push('الموعد ' + dayLabel(a.summonDate) + (a.summonTime ? ' ' + fmtHM(a.summonTime) : ''));
+  if (a.type === 'suspend' && a.suspendDays) parts.push(daysTxt(a.suspendDays));
+  return parts.join(' · ');
+}
+function actRow(a){
+  const cls = stuCls(a);
+  return `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico(a.type)}
+    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
+    <span class="side">${pill(a)}<span class="when">${esc(rel(a.createdAt))}</span></span></button>`;
+}
+
+/* ===== الأخطاء والحفظ ===== */
+const ERR = {
+  not_staff:'حسابك غير مفعّل في الطاقم. راجع مسؤول الموقع.',
+  not_approver:'يعتمد الفصل المدير أو الوكيل أو المشرف العام.',
+  not_allowed:'لا تملك صلاحية هذا الإجراء.',
+  forbidden:'هذا الإجراء للمسؤولين فقط.',
+  username_taken:'اسم المستخدم مستخدم من قبل. اختر اسماً آخر.',
+  bad_username:'اسم المستخدم بالإنجليزي: حروف صغيرة وأرقام ونقطة أو شرطة، من 3 إلى 30.',
+  weak_password:'كلمة السر لازم تكون 6 أحرف على الأقل.',
+  name_required:'اكتب الاسم.',
+  cannot_lock_self:'لا يمكنك إيقاف حسابك أو إزالة صلاحية الإدارة عن نفسك.',
+  already_set_up:'تم إعداد الموقع من قبل. سجّل دخولك.',
+  student_not_found:'الطالب غير موجود. ربما حُذف.',
+  invalid_credentials:'اسم المستخدم أو كلمة السر غير صحيحة.',
+  user_banned:'هذا الحساب موقوف. راجع مسؤول الموقع.',
+  same_password:'كلمة السر الجديدة مطابقة للقديمة.'
+};
+function errText(e){
+  const c = String((e && e.code) || ''), m = String((e && e.message) || '');
+  if (ERR[m]) return ERR[m];
+  if (ERR[c]) return ERR[c];
+  if (/Invalid login credentials/i.test(m)) return ERR.invalid_credentials;
+  if (/banned/i.test(m)) return ERR.user_banned;
+  if (c === '42501' || /row-level security|permission denied/i.test(m)) return ERR.not_allowed;
+  if (c === 'PGRST301' || /JWT expired|invalid JWT/i.test(m)) return 'انتهت جلستك. سجّل دخولك من جديد.';
+  if (/Failed to fetch|NetworkError|Load failed|network/i.test(m) || !navigator.onLine) return 'تعذر الاتصال. تحقق من الإنترنت ثم أعد المحاولة.';
+  if (c === 'quota_exceeded' || /quota/i.test(m)) return 'امتلأت مساحة قاعدة البيانات المجانية. راجع مسؤول الموقع.';
+  return 'تعذر الحفظ. أعد المحاولة.';
+}
+async function save(fn, okMsg){
+  try { const r = await fn(); if (okMsg) toast(okMsg); return r === undefined ? true : r; }
+  catch(e) { console.error(e); toast(errText(e), {bad:true}); return false; }
+}
+function setPrefs(patch){
+  if (!S.uid) return Promise.resolve(false);
+  const next = Object.assign(prefs(), patch);
+  S.prefsDoc = next; S.ver++; schedule();
+  S.prefsQ = S.prefsQ.then(() => API.savePrefs(next, S.uid)).catch(e => { toast(errText(e), {bad:true}); });
+  return S.prefsQ;
+}
+
+/* ===== تحميل البيانات والتحديث المباشر ===== */
+async function loadData(){
+  const since = new Date(Date.now() - 400 * 864e5).toISOString();
+  const d = await API.loadAll(since);
+  const staff = {}, students = {}, actions = {};
+  d.staff.forEach(s => { staff[s.id] = s; });
+  d.students.forEach(s => { students[s.id] = s; });
+  d.actions.forEach(a => { actions[a.id] = a; });
+  d.logs.forEach(l => { const a = actions[l.actionId]; if (a) a.log.push(l); });
+  Object.values(actions).forEach(a => a.log.sort((x, y) => x.t - y.t || x.id - y.id));
+  S.staff = staff; S.students = students; S.actions = actions; S.prefsDoc = d.prefs;
+  S.loaded = true; S.fatal = ''; S.ver++;
+}
+async function reload(){
+  try { await loadData(); } catch(e) { S.fatal = errText(e); }
+  setGate();
+}
+async function refreshAction(id){
+  try { const a = await API.getAction(id); if (a) S.actions[id] = a; else delete S.actions[id]; S.ver++; schedule(); } catch(e) {}
+}
+function bump(){ S.ver++; schedule(); }
+const RT = {
+  action(ev, row, oldId){
+    if (ev === 'DELETE') { delete S.actions[oldId]; return bump(); }
+    if (!row) return;
+    const prev = S.actions[row.id];
+    row.log = prev ? prev.log : (S.orphan[row.id] || []);
+    delete S.orphan[row.id];
+    S.actions[row.id] = row;
+    if (!prev) row.log.forEach(e => maybeAlert(row, e));
+    bump();
+  },
+  log(e){
+    const a = S.actions[e.actionId];
+    if (!a) { (S.orphan[e.actionId] || (S.orphan[e.actionId] = [])).push(e); return; }
+    if (a.log.some(x => x.id === e.id)) return;
+    a.log.push(e); a.log.sort((x, y) => x.t - y.t || x.id - y.id);
+    maybeAlert(a, e); bump();
+  },
+  student(ev, row, oldId){ if (ev === 'DELETE') delete S.students[oldId]; else if (row) S.students[row.id] = row; bump(); },
+  staff(ev, row, oldId){
+    if (ev === 'DELETE') delete S.staff[oldId]; else if (row) S.staff[row.id] = row;
+    S.ver++; setGate();
+  },
+  status(st){
+    if (st === 'SUBSCRIBED') { if (S.rtDown) { S.rtDown = false; reload(); } }
+    else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') S.rtDown = true;
+  }
+};
+
+/* ===== الإشعارات ===== */
+function relevant(a, e){
+  if (!e || !e.by || e.by === S.uid) return false;
+  const role = myRole();
+  if (a.createdBy === S.uid) return true;
+  if (e.ev === 'created') {
+    if (a.type === 'suspend' && APPROVERS.includes(role)) return true;
+    if (a.type === 'report' && a.to && a.to === role) return true;
+    return !!prefs().types[a.type];
+  }
+  return false;
+}
+function maybeAlert(a, e){
+  if (!S.loaded || !relevant(a, e) || Date.now() - e.t > 120000) return;
+  if (prefs().notify) alertEv({a, e});
+}
+function events(){
+  const m = M();
+  if (m.ev) return m.ev;
+  const out = [];
+  for (const a of m.list) for (const e of a.log) if (relevant(a, e)) out.push({a, e});
+  out.sort((x, y) => (y.e.t || 0) - (x.e.t || 0));
+  m.ev = out.slice(0, 100);
+  return m.ev;
+}
+const unread = () => { const ls = prefs().lastSeen || 0; return events().filter(x => (x.e.t || 0) > ls).length; };
+function evText(x){
+  const a = x.a, e = x.e, who = personName(e.by), n = stuName(a);
+  if (e.ev === 'created') {
+    let t1;
+    if (a.type === 'suspend') t1 = e.to === 'pending' ? `طلب فصل ${n} بانتظار الاعتماد` : `فصل ${n}`;
+    else if (a.type === 'summon') t1 = `استدعاء ولي أمر ${n}`;
+    else if (a.type === 'report') t1 = `تقرير جديد عن ${n}`;
+    else t1 = `تعهد جديد على ${n}`;
+    return {t1, t2:'سجّله ' + who};
+  }
+  if (e.ev === 'resched') return {t1:`موعد جديد لاستدعاء ولي أمر ${n}`, t2:'غيّره ' + who};
+  return {t1:`${who} ${MOVE_PAST[e.to] || 'حدّث القيد'}: ${n}`, t2:e.note || TYPES[a.type].label};
+}
+function toast(msg, o){
+  o = o || {};
+  const box = $('#toasts'); if (!box) return;
+  const el = document.createElement('div');
+  el.className = 'toast' + (o.bad ? ' bad' : '');
+  el.setAttribute('role', o.bad ? 'alert' : 'status');
+  el.innerHTML = `<div class="main"><div class="tt"></div>${o.sub ? '<div class="ts"></div>' : ''}</div>${o.btn ? '<button type="button"></button>' : ''}`;
+  el.querySelector('.tt').textContent = msg;
+  if (o.sub) el.querySelector('.ts').textContent = o.sub;
+  if (o.btn) { const b = el.querySelector('button'); b.textContent = o.btn; b.addEventListener('click', () => { el.remove(); if (o.onBtn) o.onBtn(); }); }
+  box.prepend(el);
+  while (box.children.length > 3) box.lastChild.remove();
+  setTimeout(() => el.remove(), o.ms || (o.bad ? 7000 : 3800));
+}
+function alertEv(x){
+  const t = evText(x);
+  toast(t.t1, {sub:t.t2, btn:'فتح', ms:7000, onBtn:() => openAction(x.a.id)});
+  try { if (navigator.vibrate) navigator.vibrate([70, 50, 70]); } catch(e) {}
+  if (prefs().sound) chime();
+}
+function chime(){
+  try {
+    const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    const ac = S.audio || (S.audio = new C());
+    if (ac.state === 'suspended') ac.resume();
+    const t0 = ac.currentTime + 0.02;
+    [[784, 0], [1046.5, 0.14]].forEach(p => {
+      const os = ac.createOscillator(), g = ac.createGain();
+      os.type = 'sine'; os.frequency.value = p[0];
+      g.gain.setValueAtTime(0.0001, t0 + p[1]);
+      g.gain.exponentialRampToValueAtTime(0.16, t0 + p[1] + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + p[1] + 0.4);
+      os.connect(g); g.connect(ac.destination); os.start(t0 + p[1]); os.stop(t0 + p[1] + 0.45);
+    });
+  } catch(e) {}
+}
+document.addEventListener('pointerdown', () => {
+  if (prefs().sound && !S.audio) { try { const C = window.AudioContext || window.webkitAudioContext; if (C) { S.audio = new C(); S.audio.resume(); } } catch(e) {} }
+}, {passive:true});
+
+/* ===== الشاشات ===== */
+let pendingFrame = false;
+function schedule(){
+  if (pendingFrame) return;
+  pendingFrame = true;
+  const fire = () => { if (!pendingFrame) return; pendingFrame = false; update(); };
+  requestAnimationFrame(fire);
+  setTimeout(fire, 250);
+}
+function gateState(){
+  if (!API.configured) return 'config';
+  if (S.authState === 'checking') return 'loading';
+  if (S.authState === 'setup') return 'setup';
+  if (S.authState === 'out') return 'login';
+  if (!S.loaded) return S.fatal ? 'fatal' : 'loading';
+  const m = me();
+  if (!m || !m.active) return 'inactive';
+  return 'in';
+}
+function setGate(){
+  const g = gateState();
+  if (g !== S.gate) { S.gate = g; mount(); return; }
+  schedule();
+}
+function mount(){
+  const g = S.gate, view = $('#view');
+  $('#nav').hidden = g !== 'in';
+  $('#bellBtn').hidden = g !== 'in';
+  view.classList.toggle('bare', g !== 'in');
+  if (g === 'in') { const V = VIEWS[S.view] || VIEWS.home; view.innerHTML = ''; V.mount(view); V.update(view); }
+  else { closeSheet(); (GATES[g] || GATES.loading)(view); }
+  markNav(); refreshBadge();
+}
+function update(){
+  if (S.gate === 'in') { const V = VIEWS[S.view] || VIEWS.home; V.update($('#view')); refreshSheet(); }
+  refreshBadge();
+}
+function markNav(){
+  const cur = S.view === 'student' ? ({log:'log', home:'home'}[S.params.from] || 'students') : S.view;
+  $$('#nav [data-tab]').forEach(b => { if (b.dataset.tab === cur) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+}
+function refreshBadge(){
+  const b = $('#bellBadge'), btn = $('#bellBtn');
+  if (S.gate !== 'in') { b.hidden = true; return; }
+  const n = unread();
+  b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
+  btn.setAttribute('aria-label', n ? `الإشعارات، ${n} غير مقروءة` : 'الإشعارات');
+}
+function go(v, params){
+  S.view = v; S.params = params || {};
+  closeSheet();
+  if (v === 'inbox') { S.seenMark = prefs().lastSeen; if (unread() > 0) setPrefs({lastSeen:Date.now()}); }
+  window.scrollTo(0, 0);
+  mount();
+}
+window.addEventListener('online', () => { S.offline = false; schedule(); });
+window.addEventListener('offline', () => { S.offline = true; schedule(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { S.hiddenAt = Date.now(); return; }
+  if (S.gate === 'in' && S.hiddenAt && Date.now() - S.hiddenAt > 60000) reload();
+});
+setInterval(() => { if (S.gate === 'in' && !document.hidden) schedule(); }, 60000);
