@@ -61,9 +61,9 @@ const API = (function(){
     },
     async signOut(){ await sb.auth.signOut(); },
     async changePassword(password){ const r = await sb.auth.updateUser({password}); if (r.error) throw fail(r.error); },
-    async setupNeeded(){ return !!(await q(sb.rpc('setup_needed'))); },
-    setup(p){ return fn('setup', p); },
-    adminUsers(body){ return fn('admin-users', body); },
+    async setupNeeded(){ const r = await fn('staff', {op:'status'}); return !!(r && r.needed); },
+    setup(p){ return fn('staff', Object.assign({op:'setup'}, p)); },
+    adminUsers(body){ return fn('staff', body); },
     loadDeleted(){ return q(sb.from('deleted_log').select('id,table_name,row_data,deleted_by,deleted_at').order('id', {ascending:false}).limit(100)); },
 
     async loadAll(sinceISO){
