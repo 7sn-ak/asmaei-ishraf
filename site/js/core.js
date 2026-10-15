@@ -26,15 +26,26 @@ const MOVES = {
   summon:  {scheduled:[['attended','حضر ولي الأمر','ok'],['absent','لم يحضر','bad']], attended:[['scheduled','إرجاع إلى موعد قادم','ghost']], absent:[['scheduled','إرجاع إلى موعد قادم','ghost']]},
   suspend: {pending:[['approved','اعتماد الفصل','ok'],['rejected','رفض الفصل','bad']], approved:[['pending','إلغاء الاعتماد','ghost']], rejected:[['pending','إعادة إلى الاعتماد','ghost']]}
 };
-const MOVE_PAST = {signed:'أكّد توقيع التعهد', reviewed:'راجع التقرير', attended:'سجّل حضور ولي الأمر', absent:'سجّل عدم حضور ولي الأمر', approved:'اعتمد الفصل', rejected:'رفض الفصل', open:'أعاد فتح القيد', scheduled:'أعاد الاستدعاء إلى موعد قادم', pending:'أعاد الفصل إلى الاعتماد'};
-const DONE = {signed:'تم تأكيد التوقيع', reviewed:'تمت مراجعة التقرير', attended:'سُجّل حضور ولي الأمر', absent:'سُجّل عدم حضور ولي الأمر', approved:'اعتُمد الفصل', rejected:'رُفض الفصل', open:'أُعيد فتح القيد', scheduled:'أُعيد إلى موعد قادم', pending:'أُعيد الفصل إلى الاعتماد'};
+// contacted و uncontacted: تسجيل التواصل مع ولي الأمر وإلغاؤه (لا يغيّران حالة القيد)
+const MOVE_PAST = {signed:'أكّد توقيع التعهد', reviewed:'راجع التقرير', attended:'سجّل حضور ولي الأمر', absent:'سجّل عدم حضور ولي الأمر', approved:'اعتمد الفصل', rejected:'رفض الفصل', open:'أعاد فتح القيد', scheduled:'أعاد الاستدعاء إلى موعد قادم', pending:'أعاد الفصل إلى الاعتماد', contacted:'تواصل مع ولي الأمر', uncontacted:'ألغى تسجيل التواصل مع ولي الأمر'};
+const DONE = {signed:'تم تأكيد التوقيع', reviewed:'تمت مراجعة التقرير', attended:'سُجّل حضور ولي الأمر', absent:'سُجّل عدم حضور ولي الأمر', approved:'اعتُمد الفصل', rejected:'رُفض الفصل', open:'أُعيد فتح القيد', scheduled:'أُعيد إلى موعد قادم', pending:'أُعيد الفصل إلى الاعتماد', contacted:'سُجّل التواصل مع ولي الأمر', uncontacted:'أُلغي تسجيل التواصل'};
 const ROLES = {supervisor:'مشرف', head:'المشرف العام', vp:'الوكيل', principal:'المدير', affairs:'شؤون الطلبة'};
 const ROLE_KEYS = ['supervisor','head','vp','principal','affairs'];
 const ROLE_ORDER = ['principal','vp','head','affairs','supervisor'];
-// تطابق الدوال approver_roles و overseer_roles و manager_roles في قاعدة البيانات
+const ROLE_DESC = {
+  supervisor:'يسجل الإجراءات، ويرسل طلب الفصل للاعتماد.',
+  head:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
+  vp:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
+  principal:'يسجل الإجراءات، ويعتمد الفصل، ويتابع كل التقارير، ويصحّح أي قيد، ويدير قوائم الطلاب.',
+  affairs:'يطّلع على الإجراءات ويتواصل مع أولياء الأمور في الاستدعاء والفصل ويسجل «تم التواصل»، ويدير قوائم الطلاب. لا يسجل إجراءات.'
+};
+// تطابق الدوال approver_roles و overseer_roles و manager_roles و recorder_roles و contact_roles في قاعدة البيانات
 const APPROVERS = ['principal','vp','head'];   // يعتمدون الفصل
 const OVERSEERS = ['principal','vp','head'];   // يرون كل التقارير ويحذفون أي قيد
 const MANAGERS = ['principal','vp','head','affairs']; // يديرون قوائم الطلاب
+const RECORDERS = ['supervisor','head','vp','principal']; // يسجلون الإجراءات ويغيّرون حالاتها
+const CONTACTORS = ['affairs','head','vp','principal'];   // يسجلون التواصل مع ولي الأمر (ومعهم مسؤول الموقع)
+const CONTACT_TYPES = ['summon','suspend'];               // الإجراءات التي يُتواصل فيها مع ولي الأمر
 const VIOLATIONS = ['التأخر الصباحي','الغياب بدون عذر','الهروب من الحصة','الخروج من المدرسة دون إذن','إثارة الفوضى في الفصل','عدم الالتزام بالزي المدرسي','استخدام الهاتف النقال','ألفاظ غير لائقة','الاعتداء على زميل','مشاجرة','الإساءة لمعلم أو موظف','إتلاف ممتلكات المدرسة','التدخين','الغش في الاختبار'];
 const DEFAULT_TYPES = {pledge:true, report:true, summon:true, suspend:true};
 
@@ -73,13 +84,15 @@ const fmtDay = (s, opt) => { if (!s) return '—'; try { return new Intl.DateTim
 const fmtTime = t => { try { return new Intl.DateTimeFormat(LOC, {hour:'numeric', minute:'2-digit'}).format(new Date(t)); } catch(e) { return ''; } };
 const fmtHM = hm => { if (!hm) return ''; const p = hm.split(':').map(Number); const d = new Date(); d.setHours(p[0] || 0, p[1] || 0, 0, 0); return fmtTime(d); };
 const dayLabel = s => { const t = today(); if (s === t) return 'اليوم'; if (s === addDays(t, -1)) return 'أمس'; if (s === addDays(t, 1)) return 'غداً'; return fmtDay(s); };
+// تاريخ مختصر للصفوف الضيقة: اسم اليوم خلال الأسبوع القادم، وإلا اليوم/الشهر
+const shortDay = s => { const t = today(); if (!s) return '—'; if (s === t || s === addDays(t, -1) || s === addDays(t, 1)) return dayLabel(s); if (s > t && s <= addDays(t, 6)) return fmtDay(s, {weekday:'long'}); return fmtDay(s, {day:'numeric', month:'numeric'}); };
 const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 60) return 'الآن'; if (s < 3600) return `قبل ${Math.floor(s / 60)} د`; if (s < 86400 && ymd(new Date(t)) === today()) return fmtTime(t); const d = ymd(new Date(t)); return d === addDays(today(), -1) ? 'أمس' : fmtDay(d, {day:'numeric', month:'short'}); };
 
 /* ===== الحالة ===== */
 const S = {
   authState:'checking', uid:null, staff:{}, students:{}, actions:{}, prefsDoc:null, orphan:{},
   loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
-  view:'home', params:{}, gate:null, sheet:null, readOnly:false, unsub:null,
+  view:'home', params:{}, gate:null, sheet:null, unsub:null,
   f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
       stu:{cls:'all', q:'', sort:'name', limit:150} },
   seenMark:0, audio:null, prefsQ:Promise.resolve()
@@ -103,6 +116,10 @@ const myRole = () => (me() && me().role) || '';
 const isApprover = () => APPROVERS.includes(myRole());
 const canAdmin = () => !!(me() && me().isAdmin);
 const isManager = () => MANAGERS.includes(myRole()) || canAdmin();
+const canRecord = () => RECORDERS.includes(myRole());
+const canContact = () => CONTACTORS.includes(myRole()) || canAdmin();
+// شؤون الطلبة: عملهم في السجل التواصل مع أولياء الأمور
+const contactDuty = () => myRole() === 'affairs';
 const canDelete = a => a.createdBy === S.uid || OVERSEERS.includes(myRole()) || canAdmin();
 function prefs(){
   const d = S.prefsDoc || {};
@@ -119,6 +136,15 @@ const isOpen = a => a.status === FIRST[a.type];
 const activeSusp = sid => (M().byStu[sid] || []).find(a => a.type === 'suspend' && a.status === 'approved' && a.suspendFrom && a.suspendTo && a.suspendFrom <= today() && today() <= a.suspendTo);
 const stInfo = a => ((STATUS[a.type] || {})[a.status]) || {l:a.status || '', tone:'mute'};
 const pill = a => { const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`; };
+/* التواصل مع ولي الأمر */
+// يمكن تسجيله الآن: استدعاء موعده قائم، أو فصل معتمد (قاعدة البيانات تشترط اعتماد الفصل)
+const contactOpen = a => (a.type === 'summon' && a.status === 'scheduled') || (a.type === 'suspend' && a.status === 'approved');
+// ينتظر التواصل: لم يُسجَّل بعد، وموعد الاستدعاء لم يمضِ أو مدة الفصل لم تنتهِ
+const needsContact = a => !a.contactedAt && contactOpen(a) && ((a.type === 'summon' ? a.summonDate : a.suspendTo) || '') >= today();
+const contactKey = a => a.type === 'summon' ? (a.summonDate || '') + ' ' + (a.summonTime || '') : (a.suspendFrom || '');
+const contactPill = a => a.contactedAt ? '<span class="pill tone-ok">تم التواصل</span>' : needsContact(a) ? '<span class="pill tone-warn">بانتظار التواصل</span>' : '';
+// شؤون الطلبة يرون حالة التواصل مكان حالة القيد في الاستدعاء والفصل
+const rowPill = a => (contactDuty() && CONTACT_TYPES.includes(a.type) && contactPill(a)) || pill(a);
 const tico = (t, sm) => `<span class="tico ty-${t}">${icon(TYPES[t] ? TYPES[t].icon : 'report', sm ? 'sm' : '')}</span>`;
 const tchip = t => `<span class="tchip ty-${t}">${esc(TYPES[t] ? TYPES[t].label : '')}</span>`;
 function actLine(a){
@@ -131,7 +157,7 @@ function actRow(a){
   const cls = stuCls(a);
   return `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico(a.type)}
     <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
-    <span class="side">${pill(a)}<span class="when">${esc(rel(a.createdAt))}</span></span></button>`;
+    <span class="side">${rowPill(a)}<span class="when">${esc(rel(a.createdAt))}</span></span></button>`;
 }
 
 /* ===== الأخطاء والحفظ ===== */
@@ -139,6 +165,8 @@ const ERR = {
   not_staff:'حسابك غير مفعّل في الطاقم. راجع مسؤول الموقع.',
   not_approver:'يعتمد الفصل المدير أو الوكيل أو المشرف العام.',
   not_allowed:'لا تملك صلاحية هذا الإجراء.',
+  not_approved:'يُسجَّل التواصل في الفصل بعد اعتماده.',
+  not_contact_type:'التواصل مع ولي الأمر يُسجَّل في الاستدعاء والفصل فقط.',
   forbidden:'هذا الإجراء للمسؤولين فقط.',
   username_taken:'اسم المستخدم مستخدم من قبل. اختر اسماً آخر.',
   bad_username:'اسم المستخدم بالإنجليزي: حروف صغيرة وأرقام ونقطة أو شرطة، من 3 إلى 30.',
@@ -231,6 +259,8 @@ function relevant(a, e){
   if (!e || !e.by || e.by === S.uid) return false;
   const role = myRole();
   if (a.createdBy === S.uid) return true;
+  // شؤون الطلبة: كل استدعاء جديد أو موعد جديد، وكل فصل يُعتمد، لأنها تحتاج تواصلاً مع ولي الأمر
+  if (contactDuty() && ((a.type === 'summon' && (e.ev === 'created' || e.ev === 'resched')) || (a.type === 'suspend' && e.to === 'approved'))) return true;
   if (e.ev === 'created') {
     if (a.type === 'suspend' && APPROVERS.includes(role)) return true;
     if (a.type === 'report' && a.to && a.to === role) return true;
@@ -263,6 +293,8 @@ function evText(x){
     return {t1, t2:'سجّله ' + who};
   }
   if (e.ev === 'resched') return {t1:`موعد جديد لاستدعاء ولي أمر ${n}`, t2:'غيّره ' + who};
+  if (e.to === 'contacted') return {t1:`${who} تواصل مع ولي أمر ${n}`, t2:e.note || TYPES[a.type].label};
+  if (e.to === 'uncontacted') return {t1:`${who} ألغى تسجيل التواصل مع ولي أمر ${n}`, t2:TYPES[a.type].label};
   return {t1:`${who} ${MOVE_PAST[e.to] || 'حدّث القيد'}: ${n}`, t2:e.note || TYPES[a.type].label};
 }
 function toast(msg, o){
@@ -275,6 +307,8 @@ function toast(msg, o){
   el.querySelector('.tt').textContent = msg;
   if (o.sub) el.querySelector('.ts').textContent = o.sub;
   if (o.btn) { const b = el.querySelector('button'); b.textContent = o.btn; b.addEventListener('click', () => { el.remove(); if (o.onBtn) o.onBtn(); }); }
+  // لمسة على التنبيه تخفيه، حتى لا يغطي زر الإغلاق أعلى النافذة
+  el.addEventListener('click', e => { if (!e.target.closest('button')) el.remove(); });
   box.prepend(el);
   while (box.children.length > 3) box.lastChild.remove();
   setTimeout(() => el.remove(), o.ms || (o.bad ? 7000 : 3800));
@@ -337,11 +371,17 @@ function mount(){
   view.classList.toggle('bare', g !== 'in');
   if (g === 'in') { const V = VIEWS[S.view] || VIEWS.home; view.innerHTML = ''; V.mount(view); V.update(view); }
   else { closeSheet(); (GATES[g] || GATES.loading)(view); }
-  markNav(); refreshBadge();
+  markNav(); syncNav(); refreshBadge();
 }
 function update(){
   if (S.gate === 'in') { const V = VIEWS[S.view] || VIEWS.home; V.update($('#view')); refreshSheet(); }
-  refreshBadge();
+  syncNav(); refreshBadge();
+}
+// زر «تسجيل» لمن يسجل الإجراءات فقط (يتحدث فوراً إذا غيّر مسؤول الموقع الدور)
+function syncNav(){
+  const rec = S.gate === 'in' && canRecord(), nav = $('#nav');
+  nav.classList.toggle('no-rec', !rec);
+  $('.rec', nav).hidden = !rec;
 }
 function markNav(){
   const cur = S.view === 'student' ? ({log:'log', home:'home'}[S.params.from] || 'students') : S.view;

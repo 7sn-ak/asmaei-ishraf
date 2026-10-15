@@ -180,7 +180,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--stamp);outline-o
 /* banners & empty states */
 .banner{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--r-m);font-size:14px;line-height:1.55;background:var(--info-bg);color:var(--info)}
 .banner.warn{background:var(--warn-bg);color:var(--warn)} .banner.bad{background:var(--bad-bg);color:var(--bad)}
+.banner.ok{background:var(--ok-bg);color:var(--ok)}
 .banner .ic{margin-top:1px}
+.banner .meta{color:inherit;opacity:.85}
 .empty{display:grid;gap:12px;justify-items:start;padding:20px 18px;border:1.5px dashed var(--rule);border-radius:var(--r-m);background:var(--sheet)}
 .empty h3{font-family:var(--f-display);font-weight:600;font-size:17px}
 .empty p{color:var(--ink-2);font-size:14px;max-width:46ch}
@@ -243,6 +245,7 @@ details.more-box[open]{padding-bottom:12px}
 .nav-in .rec .disc{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;background:var(--stamp);color:var(--stamp-ink);box-shadow:0 0 0 5px var(--paper),var(--shadow)}
 .nav-in .rec .ic{width:26px;height:26px;stroke-width:2.2}
 .nav-in .rec span{color:var(--ink-2)}
+.nav.no-rec .nav-in{grid-template-columns:repeat(4,minmax(0,1fr))}
 
 /* sheet */
 .scrim{position:fixed;inset:0;z-index:40;background:var(--scrim)}

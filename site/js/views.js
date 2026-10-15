@@ -8,12 +8,12 @@ function topBanner(){
 }
 function onboarding(){
   const m = M();
-  if (!S.loaded.students || !S.loaded.actions || m.students.length || m.list.length) return '';
+  if (!S.loaded || m.students.length || m.list.length) return '';
   const mg = isManager();
   return `<div class="empty"><h3>ابدأ بتجهيز السجل</h3>
     <ol class="steps">
       <li>أضف قوائم الطلاب، أو انسخها من ملف إكسل والصقها دفعة واحدة.</li>
-      <li>سجّل أول إجراء من زر «تسجيل» أسفل الشاشة.</li>
+      <li>${canRecord() ? 'سجّل أول إجراء من زر «تسجيل» أسفل الشاشة.' : 'تظهر لك الاستدعاءات والفصل هنا بعد أن يسجلها المشرفون، لتتواصل مع أولياء الأمور.'}</li>
       <li>${canAdmin() ? 'أنشئ حسابات الطاقم من «المزيد»، وأعطِ كل زميل اسم المستخدم وكلمة السر.' : 'ثبّت الموقع على شاشة جوالك من «المزيد» ليفتح مثل التطبيق.'}</li>
     </ol>
     ${mg ? `<div class="btns"><button class="btn primary" data-act="stu-import">${icon('upload','sm')}استيراد من إكسل</button><button class="btn ghost" data-act="stu-add">${icon('userplus','sm')}إضافة طالب</button></div>`
@@ -22,12 +22,30 @@ function onboarding(){
 }
 function quickRow(a, moves, sub){
   return `<div class="row"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(sub)}</span></button>
-    ${moves && !S.readOnly ? `<div class="row-acts">${moves.map(mv => `<button class="btn sm ${mv[2]}" data-act="quick" data-id="${esc(a.id)}" data-to="${mv[0]}">${esc(mv[1])}</button>`).join('')}</div>` : pill(a)}</div>`;
+    ${moves && canRecord() ? `<div class="row-acts">${moves.map(mv => `<button class="btn sm ${mv[2]}" data-act="quick" data-id="${esc(a.id)}" data-to="${mv[0]}">${esc(mv[1])}</button>`).join('')}</div>` : pill(a)}</div>`;
 }
 function grp(title, n, type){
   return `<div class="grp">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all">عرض الكل</button>` : ''}</div>`;
 }
+// صف «تواصل مطلوب»: اتصال مباشر بولي الأمر ثم «تم التواصل»
+function contactRow(a){
+  const t = today(), s = stuOf(a), phone = s && s.phone;
+  const sub = a.type === 'summon'
+    ? `استدعاء · ${shortDay(a.summonDate)}${a.summonTime ? ' ' + fmtHM(a.summonTime) : ''}`
+    : `فصل ${daysTxt(a.suspendDays || 1)} · ${a.suspendFrom <= t ? 'بدأ' : 'يبدأ'} ${shortDay(a.suspendFrom)}`;
+  return `<div class="row"><button class="main" data-act="open-action" data-id="${esc(a.id)}"><span class="t1">${esc(stuName(a))}</span><span class="t2">${esc(sub + ' · ' + stuCls(a))}</span></button>
+    <div class="row-acts">${phone ? `<a class="btn sm ghost" href="tel:${esc(phoneDigits(phone))}" aria-label="اتصال بولي أمر ${esc(stuName(a))}">${icon('summon','sm')}</a>` : ''}
+    <button class="btn sm ok" data-act="contact-quick" data-id="${esc(a.id)}">تم التواصل</button></div></div>`;
+}
+function contactAttention(){
+  const due = M().list.filter(needsContact).sort((a, b) => contactKey(a).localeCompare(contactKey(b)));
+  return `<div class="sec-h"><h2>بانتظار التواصل مع ولي الأمر</h2>${due.length ? `<span class="count num">${due.length}</span>` : ''}
+      ${due.length > 8 ? '<button class="link" data-act="go-log" data-status="contact" data-period="all">عرض الكل</button>' : ''}</div>
+    <div class="list">${due.length ? due.slice(0, 8).map(contactRow).join('') : '<p class="calm">لا يوجد تواصل مطلوب الآن.</p>'}</div>` +
+    (due.length ? '<p class="meta">اتصل بولي الأمر، ثم اضغط «تم التواصل». تفاصيل الإجراء تظهر بالضغط على اسم الطالب.</p>' : '');
+}
 function attention(){
+  if (contactDuty()) return contactAttention();
   const m = M(), role = myRole(), t = today();
   const pend = m.list.filter(a => a.type==='suspend' && a.status==='pending');
   const sums = m.list.filter(a => a.type==='summon' && a.status==='scheduled' && a.summonDate && a.summonDate <= t)
@@ -102,7 +120,7 @@ const VIEWS = {
 
       const recent = m.list.slice(0, 8);
       $('#h-recent', el).innerHTML = `<div class="sec-h"><h2>آخر الإجراءات</h2>${recent.length ? '<button class="link" data-act="go-log" data-period="all">السجل كاملاً</button>' : ''}</div>` +
-        (recent.length ? `<div class="list">${recent.map(actRow).join('')}</div>` : `<div class="list"><p class="calm">${S.loaded.actions ? 'لم يُسجَّل أي إجراء بعد.' : 'جارٍ التحميل…'}</p></div>`);
+        (recent.length ? `<div class="list">${recent.map(actRow).join('')}</div>` : `<div class="list"><p class="calm">${S.loaded ? 'لم يُسجَّل أي إجراء بعد.' : 'جارٍ التحميل…'}</p></div>`);
     }
   },
 
@@ -125,7 +143,7 @@ const VIEWS = {
       const chip = (k, v, label) => `<button class="chip" data-act="f" data-k="log.${k}" data-v="${v}" aria-pressed="${f[k]===v}">${label}</button>`;
       $('#l-types', el).innerHTML = chip('type','all','الكل') + TYPE_KEYS.map(k => chip('type', k, TYPES[k].label)).join('');
       $('#l-period', el).innerHTML = chip('period','today','اليوم') + chip('period','week','هذا الأسبوع') + chip('period','month','آخر 30 يوماً') + chip('period','all','كل الفترات');
-      $('#l-status', el).innerHTML = chip('status','all','كل الحالات') + chip('status','open','يحتاج متابعة') + chip('status','closed','منتهي');
+      $('#l-status', el).innerHTML = chip('status','all','كل الحالات') + chip('status','open','يحتاج متابعة') + chip('status','closed','منتهي') + chip('status','contact','بانتظار التواصل');
       const sel = $('#l-cls', el), sig = m.classes.join('|') + '#' + f.cls;
       if (sel.dataset.sig !== sig) {
         sel.innerHTML = `<option value="all">كل الفصول</option>` + m.classes.map(c => `<option value="${esc(c)}"${f.cls===c ? ' selected' : ''}>${esc(c)}</option>`).join('');
@@ -140,6 +158,7 @@ const VIEWS = {
         if (f.period==='month' && d < since) return false;
         if (f.status==='open' && !isOpen(a)) return false;
         if (f.status==='closed' && isOpen(a)) return false;
+        if (f.status==='contact' && !needsContact(a)) return false;
         if (f.cls !== 'all' && stuCls(a) !== f.cls) return false;
         if (q && !norm(stuName(a) + ' ' + (a.violation||'') + ' ' + (a.details||'')).includes(q)) return false;
         return true;
@@ -147,7 +166,7 @@ const VIEWS = {
       rows.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (b.createdAt||0) - (a.createdAt||0));
       $('#l-count', el).textContent = rows.length ? `${rows.length} قيد` : '';
       if (!rows.length) {
-        $('#l-list', el).innerHTML = `<div class="empty"><h3>لا توجد قيود مطابقة</h3><p>${m.list.length ? 'جرّب فترة أطول أو أزل بعض عوامل التصفية.' : 'تظهر هنا كل الإجراءات بعد تسجيلها من زر «تسجيل».'}</p>${m.list.length ? '<button class="btn ghost" data-act="go-log" data-period="all">عرض كل القيود</button>' : ''}</div>`;
+        $('#l-list', el).innerHTML = `<div class="empty"><h3>لا توجد قيود مطابقة</h3><p>${m.list.length ? 'جرّب فترة أطول أو أزل بعض عوامل التصفية.' : canRecord() ? 'تظهر هنا كل الإجراءات بعد تسجيلها من زر «تسجيل».' : 'تظهر هنا كل الإجراءات بعد أن يسجلها المشرفون.'}</p>${m.list.length ? '<button class="btn ghost" data-act="go-log" data-period="all">عرض كل القيود</button>' : ''}</div>`;
         return;
       }
       const shown = rows.slice(0, f.limit);
@@ -181,7 +200,7 @@ const VIEWS = {
         `<span class="legend" aria-hidden="true">${TYPE_KEYS.map(tchip).join('')}</span>`;
       $('#s-count', el).textContent = m.students.length ? `${m.students.length} طالب` : '';
       if (!m.students.length) {
-        $('#s-list', el).innerHTML = S.loaded.students ? `<div class="empty"><h3>لا يوجد طلاب بعد</h3>
+        $('#s-list', el).innerHTML = S.loaded ? `<div class="empty"><h3>لا يوجد طلاب بعد</h3>
           <p>${isManager() ? 'أسرع طريقة: انسخ أعمدة الاسم والفصل وهاتف ولي الأمر من ملف إكسل، والصقها في الاستيراد.' : 'تضيف شؤون الطلبة أو الإدارة قوائم الطلاب. يمكنك إضافة طالب أثناء تسجيل الإجراء.'}</p>
           ${isManager() ? `<div class="btns"><button class="btn primary" data-act="stu-import">${icon('upload','sm')}استيراد من إكسل</button><button class="btn ghost" data-act="stu-add">${icon('userplus','sm')}إضافة طالب</button></div>` : ''}</div>`
           : `<p class="loading">جارٍ التحميل…</p>`;
@@ -213,7 +232,7 @@ const VIEWS = {
       const id = S.params.id, s = S.students[id], acts = M().byStu[id] || [], root = $('#p-root', el);
       const back = `<div class="pback"><button class="iconbtn" data-act="back" aria-label="رجوع">${icon('back')}</button><span>${{home:'الرئيسية', log:'السجل', inbox:'الإشعارات'}[S.params.from] || 'الطلاب'}</span></div>`;
       if (!s && !acts.length) {
-        root.innerHTML = back + (S.loaded.students ? `<div class="empty"><h3>لم يُعثر على الطالب</h3><p>ربما حُذف من قائمة الطلاب.</p></div>` : '<p class="loading">جارٍ التحميل…</p>');
+        root.innerHTML = back + (S.loaded ? `<div class="empty"><h3>لم يُعثر على الطالب</h3><p>ربما حُذف من قائمة الطلاب.</p></div>` : '<p class="loading">جارٍ التحميل…</p>');
         return;
       }
       const name = s ? s.name : acts[0].studentName, cls = s ? s.cls : acts[0].cls;
@@ -230,15 +249,15 @@ const VIEWS = {
         ${s && s.notes ? `<p class="details">${esc(s.notes)}</p>` : ''}
         <div class="stats">${TYPE_KEYS.map(k => `<div class="stat ty-${k}"><span class="lb">${TYPES[k].label}</span><b>${by[k]||0}</b></div>`).join('')}</div>
         ${recent >= 3 ? `<div class="banner warn">${icon('alert')}<div>عدد الإجراءات على هذا الطالب خلال آخر 30 يوماً: ${recent}.</div></div>` : ''}
-        ${S.readOnly ? '' : `<button class="btn primary block" data-act="record" data-student="${esc(id)}">${icon('plus','sm')}تسجيل إجراء لهذا الطالب</button>`}
+        ${canRecord() ? `<button class="btn primary block" data-act="record" data-student="${esc(id)}">${icon('plus','sm')}تسجيل إجراء لهذا الطالب</button>` : ''}
         <section class="sec"><div class="sec-h"><h2>سجل الطالب</h2>${acts.length ? `<span class="count num">${acts.length}</span>` : ''}</div>
           ${acts.length ? `<ol class="tl">${acts.map(a => `<li class="ty-${a.type}"><button class="card" data-act="open-action" data-id="${esc(a.id)}">
-              <span class="top">${tchip(a.type)}${pill(a)}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
+              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
               <span class="what">${esc(a.violation || '—')}</span>
               <span class="meta">سجّله ${esc(personName(a.createdBy))}${a.type==='summon' && a.summonDate ? ' · الموعد ' + esc(dayLabel(a.summonDate)) : ''}${a.type==='suspend' && a.suspendFrom ? ' · ' + esc(daysTxt(a.suspendDays||1)) + '، يبدأ ' + esc(dayLabel(a.suspendFrom)) : ''}</span>
             </button></li>`).join('')}</ol>` : `<div class="list"><p class="calm">لا توجد إجراءات مسجلة على هذا الطالب.</p></div>`}
         </section>
-        ${s && isManager() && !S.readOnly ? `<div class="btns"><button class="btn ghost" data-act="stu-edit" data-id="${esc(id)}">${icon('edit','sm')}تعديل بيانات الطالب</button></div>` : ''}`;
+        ${s && isManager() ? `<div class="btns"><button class="btn ghost" data-act="stu-edit" data-id="${esc(id)}">${icon('edit','sm')}تعديل بيانات الطالب</button></div>` : ''}`;
     }
   },
 
@@ -246,23 +265,24 @@ const VIEWS = {
     mount(el){
       el.innerHTML = `<div class="stack">
         <div class="page-h"><h1>الإشعارات</h1><span class="grow"></span><button class="btn sm ghost" data-act="markread">تعليم الكل كمقروء</button></div>
-        <section class="list" id="i-prefs"></section>
-        <div id="i-list"></div></div>`;
+        <section class="list" id="in-prefs"></section>
+        <div id="in-list"></div></div>`;
     },
     update(el){
       const p = prefs();
       const sw = (k, label) => `<button class="sw" role="switch" aria-checked="${!!p[k]}" data-act="pref" data-k="${k}" aria-label="${label}"></button>`;
-      $('#i-prefs', el).innerHTML = `
+      $('#in-prefs', el).innerHTML = `
         <div class="setrow"><div class="main"><div class="t1">التنبيهات الفورية</div><div class="t2 wrap">يظهر تنبيه على الشاشة لحظة تسجيل إجراء جديد أثناء فتحك للسجل.</div></div>${sw('notify','التنبيهات الفورية')}</div>
         ${p.notify ? `<div class="setrow"><div class="main"><div class="t1">صوت مع التنبيه</div><div class="t2 wrap">يعمل بعد أول لمسة على الصفحة، مع اهتزاز في الأجهزة التي تدعمه.</div></div>${sw('sound','صوت مع التنبيه')}</div>
         <div class="setrow"><div class="main"><div class="t1">نبّهني عن</div><div class="chips">${TYPE_KEYS.map(k => `<button class="chip" data-act="pref-type" data-t="${k}" aria-pressed="${!!p.types[k]}">${TYPES[k].label}</button>`).join('')}</div>
-          ${isApprover() ? '<div class="t2 wrap">طلبات الفصل تصلك دائماً لأنك تعتمدها.</div>' : ''}</div></div>` : ''}`;
+          ${isApprover() ? '<div class="t2 wrap">طلبات الفصل تصلك دائماً لأنك تعتمدها.</div>' : ''}
+          ${contactDuty() ? '<div class="t2 wrap">الاستدعاءات وتغيير مواعيدها والفصل المعتمد تصلك دائماً لأنك تتواصل مع أولياء الأمور.</div>' : ''}</div></div>` : ''}`;
       const ev = events();
       if (!ev.length) {
-        $('#i-list', el).innerHTML = `<div class="empty"><h3>لا توجد إشعارات</h3><p>تظهر هنا الإجراءات الجديدة التي يسجلها الزملاء، وكل تحديث على القيود التي سجلتها أنت.</p></div>`;
+        $('#in-list', el).innerHTML = `<div class="empty"><h3>لا توجد إشعارات</h3><p>${contactDuty() ? 'تظهر هنا الاستدعاءات الجديدة والفصل المعتمد، لتتواصل مع أولياء الأمور.' : 'تظهر هنا الإجراءات الجديدة التي يسجلها الزملاء، وكل تحديث على القيود التي سجلتها أنت.'}</p></div>`;
         return;
       }
-      $('#i-list', el).innerHTML = `<div class="list">${ev.map(x => {
+      $('#in-list', el).innerHTML = `<div class="list">${ev.map(x => {
         const t = evText(x), un = (x.e.t||0) > S.seenMark;
         return `<button class="row${un ? ' unread' : ''}" data-act="open-action" data-id="${esc(x.a.id)}">${tico(x.a.type)}
           <span class="main"><span class="t1">${esc(t.t1)}</span><span class="t2">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;

@@ -18,7 +18,8 @@ const API = (function(){
     violation:r.violation, details:r.details || '', date:r.date,
     summonDate:r.summon_date || '', summonTime:hm(r.summon_time),
     suspendDays:r.suspend_days || null, suspendFrom:r.suspend_from || '', suspendTo:r.suspend_to || '',
-    to:r.report_to || '', createdAt:ms(r.created_at), createdBy:r.created_by, updatedAt:ms(r.updated_at), log:[]
+    to:r.report_to || '', createdAt:ms(r.created_at), createdBy:r.created_by, updatedAt:ms(r.updated_at),
+    contactedAt:ms(r.contacted_at), contactedBy:r.contacted_by || '', contactNote:r.contact_note || '', log:[]
   });
   const mapLog = r => ({id:r.id, actionId:r.action_id, t:ms(r.at), by:r.by, ev:r.ev, to:r.to_status || '', note:r.note || ''});
   const mapStaff = r => ({id:r.id, name:r.name, username:r.username, role:r.role, isAdmin:!!r.is_admin, active:!!r.active});
@@ -107,6 +108,8 @@ const API = (function(){
     },
     async moveAction(id, to, note){ await q(sb.rpc('move_action', {p_id:id, p_to:to, p_note:note || ''})); },
     async reschedAction(id, date, time, note){ await q(sb.rpc('resched_action', {p_id:id, p_date:date, p_time:time || null, p_note:note || ''})); },
+    // تسجيل التواصل مع ولي الأمر في الاستدعاء والفصل، أو إلغاؤه
+    async markContact(id, done, note){ await q(sb.rpc('mark_contact', {p_id:id, p_done:!!done, p_note:note || ''})); },
     async deleteAction(id){
       const rows = await q(sb.from('actions').delete().eq('id', id).select('id'));
       if (!rows.length) throw fail({code:'42501', message:'not_allowed'});

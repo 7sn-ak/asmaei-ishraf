@@ -2,7 +2,14 @@
 // شاشات الدخول، والنوافذ السفلية (تسجيل إجراء، تفاصيل القيد، الطلاب، الاستيراد، حسابات الطاقم)، والأحداث، والتشغيل.
 /* ===== شاشات الدخول ===== */
 const gateShell = inner => `<div class="gate"><svg class="seal" aria-hidden="true"><use href="#i-seal"/></svg>${inner}</div>`;
-const roleButtons = (act, cur) => `<div class="roles" role="group" aria-label="الدور">${ROLE_KEYS.map(k => `<button type="button" data-act="${act}" data-r="${k}" aria-pressed="${cur === k}">${ROLES[k]}</button>`).join('')}</div>`;
+// أزرار الأدوار، وتحتها وصف صلاحيات الدور المختار
+const roleButtons = (act, cur) => `<div class="roles" role="group" aria-label="الدور">${ROLE_KEYS.map(k => `<button type="button" data-act="${act}" data-r="${k}" aria-pressed="${cur === k}">${ROLES[k]}</button>`).join('')}</div>
+  <p class="note" id="${act}-note" aria-live="polite"${cur ? '' : ' hidden'}>${esc(ROLE_DESC[cur] || '')}</p>`;
+function pickRole(act, r){
+  $$(`[data-act="${act}"]`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === r)));
+  const n = document.getElementById(act + '-note');
+  if (n) { n.textContent = ROLE_DESC[r] || ''; n.hidden = !r; }
+}
 const pwField = (id, label, auto) => `<div class="field"><label for="${id}">${label}</label><div class="pw"><input id="${id}" type="password" autocomplete="${auto}" dir="ltr"><button type="button" data-act="pw-toggle" data-for="${id}">إظهار</button></div></div>`;
 const GATES = {
   loading(el){ el.innerHTML = '<div class="loading">جارٍ فتح السجل…</div>'; },
@@ -87,7 +94,7 @@ function refreshSheet(){
 let R = null;
 function openRecord(o){
   o = o || {};
-  if (S.readOnly) return toast('صلاحيتك على هذه الصفحة للعرض فقط.', {bad:true});
+  if (!canRecord()) return toast('تسجيل الإجراءات للمشرفين والإدارة.', {bad:true});
   R = {studentId:o.studentId || '', q:'', isNew:false, type:o.type || 'pledge'};
   const body = `<div class="form">
     <div class="field"><span class="lbl">الطالب</span><div id="r-stu"></div></div>
@@ -147,7 +154,7 @@ function renderRExtra(){
     <div class="field"><label for="r-from">يبدأ من</label><input id="r-from" type="date" value="${nextSchoolDay()}" min="${today()}"></div></div><p class="note" id="r-range"></p>`;
   if (t === 'report') {
     const hasHead = Object.values(S.staff).some(s => s.role === 'head'), def = hasHead ? 'head' : 'vp';
-    h = `<div class="field"><label for="r-to">يُرفع إلى</label><select id="r-to">${['head','vp','principal','affairs'].map(k => `<option value="${k}"${k === def ? ' selected' : ''}>${ROLES[k]}</option>`).join('')}</select></div>`;
+    h = `<div class="field"><label for="r-to">يُرفع إلى</label><select id="r-to">${OVERSEERS.slice().reverse().map(k => `<option value="${k}"${k === def ? ' selected' : ''}>${ROLES[k]}</option>`).join('')}</select></div>`;
   }
   if (t === 'pledge') h = `<p class="note">بعد أن يوقّع الطالب على التعهد، افتح القيد واضغط «تم توقيع التعهد».</p>`;
   ex.innerHTML = h;
@@ -229,7 +236,7 @@ function renderActionBody(){
     : pill(a);
   const mv = ((MOVES[a.type] || {})[a.status]) || [];
   let moves = '';
-  if (mv.length && !S.readOnly) {
+  if (mv.length && canRecord()) {
     moves = (a.type === 'suspend' && !isApprover()) ? `<p class="note">يعتمد الفصل المدير أو الوكيل أو المشرف العام.</p>` :
       `<div class="field"><label for="ad-note">ملاحظة مع التحديث <span class="opt">(اختياري)</span></label><input id="ad-note" placeholder="${a.type === 'summon' ? 'مثال: حضر الأب ووقّع' : 'اكتب ملاحظة قصيرة'}">
         <div class="btns">${mv.map(m => `<button class="btn ${m[2]}" data-act="move" data-id="${esc(a.id)}" data-to="${m[0]}">${esc(m[1])}</button>`).join('')}</div></div>`;
@@ -246,8 +253,9 @@ function renderActionBody(){
       <div><dt>سجّله</dt><dd>${esc(personName(a.createdBy))}${personTitle(a.createdBy) ? ' · ' + esc(personTitle(a.createdBy)) : ''}<br><span class="meta">${esc(dayLabel(ymd(new Date(a.createdAt))))} ${esc(fmtTime(a.createdAt))}</span></dd></div>
     </dl>
     ${a.details ? `<div class="field"><span class="lbl">التفاصيل</span><p class="details">${esc(a.details)}</p></div>` : ''}
+    ${contactBox(a)}
     ${moves}
-    ${a.type === 'summon' && !S.readOnly ? `<details class="more-box" id="ad-rs"><summary>تغيير موعد الحضور</summary><div class="form">
+    ${a.type === 'summon' && canRecord() ? `<details class="more-box" id="ad-rs"><summary>تغيير موعد الحضور</summary><div class="form">
       <div class="two"><input id="ad-sd" type="date" value="${esc(a.summonDate || '')}" aria-label="تاريخ الموعد"><input id="ad-st" type="time" value="${esc(a.summonTime || '08:00')}" aria-label="ساعة الموعد"></div>
       <button class="btn primary" data-act="resched" data-id="${esc(a.id)}">حفظ الموعد الجديد</button></div></details>` : ''}
     <section class="field"><span class="lbl">سير القيد</span><ol class="tl small">${(a.log || []).slice().reverse().map(e => logItem(a, e)).join('')}</ol></section>
@@ -256,8 +264,44 @@ function renderActionBody(){
   if (openD && $('#ad-rs', body)) $('#ad-rs', body).open = true;
   body.scrollTop = sc;
 }
+// التواصل مع ولي الأمر في الاستدعاء والفصل: من تواصل ومتى، أو رقم ولي الأمر وزر «تم التواصل»
+function contactBox(a){
+  if (!CONTACT_TYPES.includes(a.type)) return '';
+  const s = stuOf(a), phone = s && s.phone, can = canContact();
+  let inner;
+  if (a.contactedAt) {
+    inner = `<div class="banner ok">${icon('check')}<div><b>تم التواصل مع ولي الأمر</b>
+        <div class="meta">${esc(personName(a.contactedBy))} · ${esc(dayLabel(ymd(new Date(a.contactedAt))))} ${esc(fmtTime(a.contactedAt))}</div>
+        ${a.contactNote ? `<div>${esc(a.contactNote)}</div>` : ''}</div></div>` +
+      (can ? `<div class="btns"><button class="btn ghost sm" data-act="uncontact" data-id="${esc(a.id)}" data-confirm="اضغط مرة أخرى لإلغاء تسجيل التواصل">إلغاء تسجيل التواصل</button></div>` : '');
+  } else if (contactOpen(a)) {
+    const ph = phone
+      ? `<div class="contact"><span class="meta">هاتف ولي الأمر</span><span class="phone">${esc(phone)}</span><span class="grow"></span>
+          <a class="btn sm ghost" href="tel:${esc(phoneDigits(phone))}">${icon('summon','sm')}اتصال</a>
+          <a class="btn sm ghost" href="https://wa.me/${esc(waNum(phone))}" target="_blank" rel="noopener">${icon('chat','sm')}واتساب</a></div>`
+      : `<p class="note">لا يوجد رقم لولي الأمر في ملف الطالب.${s && isManager() ? ` <button class="link" data-act="stu-edit" data-id="${esc(s.id)}">إضافة الرقم</button>` : ''}</p>`;
+    inner = ph + (can
+      ? `<input id="ad-cnote" placeholder="ملاحظة (اختياري)، مثال: أُبلغ الأب بالموعد" aria-label="ملاحظة عن التواصل">
+         <button class="btn ok block" data-act="contact" data-id="${esc(a.id)}">${icon('check','sm')}تم التواصل مع ولي الأمر</button>`
+      : `<p class="note">لم يُسجَّل التواصل مع ولي الأمر بعد. تسجّله شؤون الطلبة بعد الاتصال.</p>`);
+  } else if (a.type === 'suspend' && a.status === 'pending') {
+    inner = `<p class="note">يُتواصل مع ولي الأمر بعد اعتماد الفصل.</p>`;
+  } else return '';
+  return `<section class="field"><span class="lbl">التواصل مع ولي الأمر</span>${inner}</section>`;
+}
+async function markContact(id, done, quick){
+  const a = S.actions[id]; if (!a) return;
+  if (!canContact()) return toast(ERR.not_allowed, {bad:true});
+  const note = done && !quick ? (($('#ad-cnote') || {}).value || '').trim() : '';
+  const ok = await save(() => API.markContact(id, done, note));
+  if (!ok) return;
+  if ($('#ad-cnote')) $('#ad-cnote').value = '';
+  toast(DONE[done ? 'contacted' : 'uncontacted'] + ': ' + stuName(a), done ? {btn:'تراجع', onBtn:() => markContact(id, false, true)} : {});
+  refreshAction(id);
+}
 async function moveStatus(id, to, note){
   const a = S.actions[id]; if (!a) return;
+  if (!canRecord()) return toast(ERR.not_allowed, {bad:true});
   if (a.type === 'suspend' && !isApprover()) return toast(ERR.not_approver, {bad:true});
   const ok = await save(() => API.moveAction(id, to, note), DONE[to] + ': ' + stuName(a));
   if (!ok) return;
@@ -403,7 +447,6 @@ function openStaff(id){
     <div class="field"><span class="lbl">اسم المستخدم</span><span class="code">${esc(st.username)}</span></div>
     <div class="field"><span class="lbl">الدور</span>${roleButtons('sf-role', st.role)}</div>
     <div class="setrow flush"><div class="main"><div class="t1">مسؤول الموقع</div><div class="t2 wrap">${self ? 'لا يمكنك إزالة الإدارة عن نفسك.' : 'يضيف الحسابات ويعدّلها.'}</div></div><button class="sw" role="switch" aria-checked="${st.isAdmin}" data-act="sf-admin" aria-label="مسؤول الموقع"${self ? ' disabled' : ''}></button></div>
-    <p class="note">المدير والوكيل والمشرف العام يعتمدون الفصل، ويتابعون كل التقارير، ويصحّحون أي قيد. وهم وشؤون الطلبة يديرون قوائم الطلاب.</p>
     <div class="btns"><button class="btn ghost" data-act="staff-pw" data-id="${esc(id)}" data-confirm="اضغط مرة أخرى لتعيين كلمة جديدة">${icon('edit','sm')}تعيين كلمة سر جديدة</button>
     ${self ? '' : (st.active ? `<button class="btn ghost" data-act="staff-active" data-id="${esc(id)}" data-v="0" data-confirm="اضغط مرة أخرى لإيقاف الحساب">إيقاف الحساب</button>` : `<button class="btn ok" data-act="staff-active" data-id="${esc(id)}" data-v="1">إعادة تفعيل الحساب</button>`)}</div>
     ${st.active ? '' : '<p class="meta">الحساب موقوف: لا يقدر صاحبه يدخل، وقيوده السابقة باقية باسمه.</p>'}</div>`;
@@ -481,6 +524,9 @@ document.addEventListener('click', e => {
     case 'quick': moveStatus(id, el.dataset.to); break;
     case 'move': moveStatus(id, el.dataset.to, ($('#ad-note') || {}).value); break;
     case 'resched': resched(id); break;
+    case 'contact': markContact(id, true); break;
+    case 'contact-quick': markContact(id, true, true); break;
+    case 'uncontact': markContact(id, false); break;
     case 'act-del': delAction(id); break;
     case 'r-type': R.type = el.dataset.t; renderRExtra(); break;
     case 'r-pick': R.studentId = id; R.isNew = false; renderRStu(); break;
@@ -507,14 +553,14 @@ document.addEventListener('click', e => {
     case 'pw-open': openPassword(); break;
     case 'deleted-open': openDeleted(); break;
     case 'pw-save': savePassword(); break;
-    case 'su-role': S.setupRole = el.dataset.r; $$('[data-act="su-role"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === S.setupRole))); break;
+    case 'su-role': S.setupRole = el.dataset.r; pickRole('su-role', S.setupRole); break;
     case 'staff-new': openStaffNew(); break;
     case 'staff-create': createStaff(); break;
     case 'staff-open': openStaff(id); break;
     case 'staff-save': saveStaff(id); break;
     case 'staff-active': setStaffActive(id, el.dataset.v === '1'); break;
     case 'staff-pw': resetStaffPassword(id); break;
-    case 'sf-role': S.sheet.role = el.dataset.r; $$('[data-act="sf-role"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === S.sheet.role))); break;
+    case 'sf-role': S.sheet.role = el.dataset.r; pickRole('sf-role', S.sheet.role); break;
     case 'sf-admin': S.sheet.admin = !S.sheet.admin; el.setAttribute('aria-checked', String(S.sheet.admin)); break;
     case 'gen-pw': $('#sf-pass').value = genPassword(); break;
   }
