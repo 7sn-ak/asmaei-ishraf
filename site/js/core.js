@@ -317,6 +317,7 @@ function schedule(){
 function gateState(){
   if (!API.configured) return 'config';
   if (S.authState === 'checking') return 'loading';
+  if (S.authState === 'offline') return 'offline';
   if (S.authState === 'setup') return 'setup';
   if (S.authState === 'out') return 'login';
   if (!S.loaded) return S.fatal ? 'fatal' : 'loading';
@@ -360,7 +361,13 @@ function go(v, params){
   window.scrollTo(0, 0);
   mount();
 }
-window.addEventListener('online', () => { S.offline = false; schedule(); });
+window.addEventListener('online', () => {
+  S.offline = false;
+  // رجع الاتصال: افتح السجل تلقائياً إذا كان متوقفاً بسببه
+  if (S.authState === 'offline') boot();
+  else if (S.gate === 'fatal') reload();
+  else schedule();
+});
 window.addEventListener('offline', () => { S.offline = true; schedule(); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { S.hiddenAt = Date.now(); return; }

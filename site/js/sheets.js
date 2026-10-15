@@ -8,6 +8,7 @@ const GATES = {
   loading(el){ el.innerHTML = '<div class="loading">جارٍ فتح السجل…</div>'; },
   config(el){ el.innerHTML = gateShell(`<h1>الموقع غير مربوط بعد</h1><p>لم تُضبط إعدادات قاعدة البيانات في الملف js/config.js. بعد ربطها تظهر هنا شاشة الدخول.</p>`); },
   fatal(el){ el.innerHTML = gateShell(`<h1>تعذر فتح السجل</h1><p>${esc(S.fatal)}</p><div class="btns"><button class="btn primary" data-act="reload">إعادة المحاولة</button><button class="btn ghost" data-act="signout">تسجيل الخروج</button></div>`); },
+  offline(el){ el.innerHTML = gateShell(`<h1>لا يوجد اتصال بالإنترنت</h1><p>دخولك محفوظ على هذا الجهاز، ما تحتاج تسجل دخول من جديد. يفتح السجل تلقائياً أول ما يرجع الاتصال.</p><div class="btns"><button class="btn primary" data-act="retry-boot">إعادة المحاولة</button></div>`); },
   inactive(el){ el.innerHTML = gateShell(`<h1>الحساب غير مفعّل</h1><p>حسابك موقوف أو غير مضاف إلى الطاقم. راجع مسؤول الموقع.</p><div class="btns"><button class="btn ghost" data-act="signout">تسجيل الخروج</button></div>`); },
   login(el){
     el.innerHTML = gateShell(`<h1>سجل الإشراف</h1><p>${esc(APP_CONFIG.SCHOOL)}. سجّل دخولك باسم المستخدم وكلمة السر اللي أعطاك إياها مسؤول الموقع.</p>
@@ -500,6 +501,7 @@ document.addEventListener('click', e => {
     case 'more-stu': S.f.stu.limit += 150; update(); break;
     case 'copy': copyText(el.dataset.text, el); break;
     case 'reload': S.fatal = ''; reload(); break;
+    case 'retry-boot': S.authState = 'checking'; setGate(); boot(); break;
     case 'signout': API.signOut().catch(() => {}).finally(() => { teardown(); S.authState = 'out'; setGate(); }); break;
     case 'pw-toggle': { const i = document.getElementById(el.dataset.for); if (i) { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? 'إخفاء' : 'إظهار'; } break; }
     case 'pw-open': openPassword(); break;
@@ -552,15 +554,23 @@ async function enter(uid){
   setGate();
 }
 async function boot(){
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (!S.booted) {
+    S.booted = true;
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if (API.configured) API.onAuth(ev => { if (ev === 'SIGNED_OUT' && S.authState === 'in') { teardown(); S.authState = 'out'; setGate(); } });
+  }
   if (!API.configured) { setGate(); return; }
   setGate();
-  API.onAuth(ev => { if (ev === 'SIGNED_OUT' && S.authState === 'in') { teardown(); S.authState = 'out'; setGate(); } });
   try {
     const s = await API.session();
     if (s && s.user) return enter(s.user.id);
+    // لا جلسة صالحة الآن، لكن هناك جلسة محفوظة: غالباً الإنترنت مقطوع، فلا نطلب الدخول من جديد
+    if (API.hasStoredSession()) { S.authState = 'offline'; setGate(); return; }
     S.authState = (await API.setupNeeded()) ? 'setup' : 'out';
-  } catch(e) { S.authState = 'out'; S.fatal = errText(e); }
+  } catch(e) {
+    if (API.hasStoredSession()) S.authState = 'offline';
+    else { S.authState = 'out'; S.fatal = errText(e); }
+  }
   setGate();
 }
 boot();

@@ -54,6 +54,8 @@ const API = (function(){
   return {
     configured,
     async session(){ const r = await sb.auth.getSession(); return r.data.session; },
+    // جلسة محفوظة على الجهاز حتى لو تعذر تجديدها الآن (مثلاً لانقطاع الإنترنت)
+    hasStoredSession(){ try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^sb-.*-auth-token$/.test(k) && localStorage.getItem(k)) return true; } } catch(e) {} return false; },
     onAuth(cb){ sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signIn(username, password){
       const r = await sb.auth.signInWithPassword({email:emailOf(username), password});
