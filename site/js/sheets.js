@@ -405,17 +405,12 @@ function genPassword(){
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint32Array(10));
   let p = ''; for (const x of r) p += chars[x % chars.length]; return p;
 }
-// فصول الجناح في نافذة العضو (للمشرف فقط)
-function classPicker(sel, role){
-  return `<div class="field" id="sf-cls-field"${role === 'supervisor' ? '' : ' hidden'}><span class="lbl">فصول الجناح</span>
-    <div class="chips multi" id="sf-cls">${classChips(sel)}</div>
-    <div class="gen"><input id="sf-cls-new" placeholder="فصل آخر، مثال: 10/4" aria-label="فصل آخر"><button type="button" class="btn ghost sm" data-act="sf-cls-add">إضافة</button></div>
-    <p class="meta">يرى المشرف في الرئيسية إجراءات هذه الفصول فقط، ويسجل غيابها اليومي.</p></div>`;
-}
-function classChips(sel){
-  const all = Array.from(new Set(M().classes.concat(sel))).sort(clsCmp);
-  return all.map(c => `<button type="button" class="chip" data-act="sf-cls" data-c="${esc(c)}" aria-pressed="${sel.includes(c)}">${esc(c)}</button>`).join('')
-    || '<span class="meta">لا توجد فصول بعد. أضف الطلاب أولاً، أو اكتب الفصل.</span>';
+// جناح المشرف في نافذة العضو (للمشرف فقط)
+function wingPicker(sel, role){
+  return `<div class="field" id="sf-wing-field"${role === 'supervisor' ? '' : ' hidden'}><span class="lbl">الجناح</span>
+    <div class="chips multi" id="sf-wing">${wingList().map(w => `<button type="button" class="chip" data-act="sf-wing" data-w="${w.id}" aria-pressed="${sel === w.id}">${esc(w.name)}</button>`).join('')}
+      <button type="button" class="chip" data-act="sf-wing" data-w="" aria-pressed="${!sel}">بدون جناح</button></div>
+    <p class="meta">يرى المشرف في الرئيسية إجراءات فصول جناحه فقط، وتصله إشعاراتها، ويسجل غيابها اليومي. فصول كل جناح من «المزيد» ← الأجنحة.</p></div>`;
 }
 function openStaffNew(){
   const body = `<div class="form">
@@ -423,10 +418,10 @@ function openStaffNew(){
     <div class="field"><label for="sf-user">اسم المستخدم (بالإنجليزي)</label><input id="sf-user" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" placeholder="fahad"></div>
     <div class="field"><label for="sf-pass">كلمة السر</label><div class="gen"><input id="sf-pass" value="${genPassword()}" autocomplete="off" spellcheck="false"><button type="button" class="btn ghost sm" data-act="gen-pw">كلمة أخرى</button></div></div>
     <div class="field"><span class="lbl">الدور</span>${roleButtons('sf-role', 'supervisor')}</div>
-    ${classPicker([], 'supervisor')}
+    ${wingPicker(null, 'supervisor')}
     <div class="setrow flush"><div class="main"><div class="t1">مسؤول الموقع</div><div class="t2 wrap">يضيف الحسابات ويعدّلها. اتركه مطفأ لأغلب الطاقم.</div></div><button class="sw" role="switch" aria-checked="false" data-act="sf-admin" aria-label="مسؤول الموقع"></button></div>
     <p class="err" id="sf-err" hidden></p></div>`;
-  openSheet('staff', 'إضافة عضو للطاقم', body, `<button class="btn primary block" id="sf-go" data-act="staff-create">إنشاء الحساب</button>`, {role:'supervisor', admin:false, classes:[]});
+  openSheet('staff', 'إضافة عضو للطاقم', body, `<button class="btn primary block" id="sf-go" data-act="staff-create">إنشاء الحساب</button>`, {role:'supervisor', admin:false, wing:null});
 }
 async function createStaff(){
   const err = $('#sf-err'), fail = m => { err.textContent = m; err.hidden = false; };
@@ -436,13 +431,13 @@ async function createStaff(){
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return fail(ERR.bad_username);
   if (password.length < 8) return fail(ERR.weak_password);
   const btn = $('#sf-go'); btn.disabled = true; btn.textContent = 'جارٍ الإنشاء…';
-  const classes = S.sheet.role === 'supervisor' ? S.sheet.classes.slice() : [];
+  const wing = S.sheet.role === 'supervisor' ? S.sheet.wing : null;
   try { await API.adminUsers({op:'create', name, username, password, role:S.sheet.role, is_admin:S.sheet.admin}); }
   catch(e) { btn.disabled = false; btn.textContent = 'إنشاء الحساب'; return fail(errText(e)); }
   showCredentials(name, username, password, 'أُنشئ الحساب');
   await reload();
   const st = Object.values(S.staff).find(x => x.username === username);
-  if (st && classes.length) await save(() => API.setStaffClasses(st.id, classes));
+  if (st && wing) await save(() => API.setStaffWing(st.id, wing));
 }
 function showCredentials(name, username, password, title){
   const url = location.href.split('#')[0];
@@ -459,21 +454,57 @@ function openStaff(id){
     <div class="field"><label for="sf-name">الاسم كما يراه الزملاء</label><input id="sf-name" value="${esc(st.name)}"></div>
     <div class="field"><span class="lbl">اسم المستخدم</span><span class="code">${esc(st.username)}</span></div>
     <div class="field"><span class="lbl">الدور</span>${roleButtons('sf-role', st.role)}</div>
-    ${classPicker(st.classes || [], st.role)}
+    ${wingPicker(st.wingId, st.role)}
     <div class="setrow flush"><div class="main"><div class="t1">مسؤول الموقع</div><div class="t2 wrap">${self ? 'لا يمكنك إزالة الإدارة عن نفسك.' : 'يضيف الحسابات ويعدّلها.'}</div></div><button class="sw" role="switch" aria-checked="${st.isAdmin}" data-act="sf-admin" aria-label="مسؤول الموقع"${self ? ' disabled' : ''}></button></div>
     <div class="btns"><button class="btn ghost" data-act="staff-pw" data-id="${esc(id)}" data-confirm="اضغط مرة أخرى لتعيين كلمة جديدة">${icon('edit','sm')}تعيين كلمة سر جديدة</button>
     ${self ? '' : (st.active ? `<button class="btn ghost" data-act="staff-active" data-id="${esc(id)}" data-v="0" data-confirm="اضغط مرة أخرى لإيقاف الحساب">إيقاف الحساب</button>` : `<button class="btn ok" data-act="staff-active" data-id="${esc(id)}" data-v="1">إعادة تفعيل الحساب</button>`)}</div>
     ${st.active ? '' : '<p class="meta">الحساب موقوف: لا يقدر صاحبه يدخل، وقيوده السابقة باقية باسمه.</p>'}</div>`;
-  openSheet('staff', st.name, body, `<button class="btn primary block" data-act="staff-save" data-id="${esc(id)}">حفظ</button>`, {role:st.role, admin:st.isAdmin, classes:(st.classes || []).slice()});
+  openSheet('staff', st.name, body, `<button class="btn primary block" data-act="staff-save" data-id="${esc(id)}">حفظ</button>`, {role:st.role, admin:st.isAdmin, wing:st.wingId || null});
 }
 async function saveStaff(id){
   const name = $('#sf-name').value.trim().replace(/\s+/g, ' ');
   if (name.length < 2) return toast('اكتب الاسم.', {bad:true});
   const sh = S.sheet, st = S.staff[id] || {};
   if (!await save(() => API.adminUsers({op:'update', id, name, role:sh.role, is_admin:sh.admin}))) return;
-  const before = (st.classes || []).slice().sort().join('|'), after = sh.classes.slice().sort().join('|');
-  if (sh.role === 'supervisor' && before !== after && !await save(() => API.setStaffClasses(id, sh.classes))) return;
+  // المشرف في جناح واحد؛ ومن لم يعد مشرفاً يخرج من جناحه
+  const wing = sh.role === 'supervisor' ? sh.wing : null;
+  if ((st.wingId || null) !== (wing || null) && !await save(() => API.setStaffWing(id, wing))) return;
   toast('حُفظت بيانات العضو'); closeSheet(); reload();
+}
+/* --- الأجنحة: اسم الجناح ومشرفوه وفصوله --- */
+// المشرف في جناح واحد والفصل في جناح واحد: اختيار ما في جناح آخر ينقله إلى هذا الجناح عند الحفظ
+function openWing(id){
+  const w = S.wings[id]; if (!w) return;
+  if (!canWings()) return toast(ERR.not_allowed, {bad:true});
+  const body = `<div class="form">
+    <div class="field"><label for="wg-name">اسم الجناح</label><input id="wg-name" value="${esc(w.name)}" maxlength="40"></div>
+    <div class="field"><span class="lbl">المشرفون</span><div class="chips multi" id="wg-sups"></div>
+      <p class="meta">المشرف في جناح واحد: اختيار مشرف من جناح آخر ينقله إلى هذا الجناح.</p></div>
+    <div class="field"><span class="lbl">الفصول</span><div class="chips multi" id="wg-cls"></div>
+      <div class="addrow"><input id="wg-cls-new" placeholder="فصل آخر، مثال: 10/4" aria-label="فصل آخر"><button type="button" class="btn ghost sm" data-act="wg-cls-add">إضافة</button></div>
+      <p class="meta">القائمة من فصول الطلاب المضافين. الفصل في جناح واحد: اختيار فصل من جناح آخر ينقله إلى هذا الجناح.</p></div>
+    <p class="err" id="wg-err" hidden></p></div>`;
+  openSheet('wing', w.name, body, `<button class="btn primary block" data-act="wing-save" data-id="${w.id}">حفظ الجناح</button>`,
+    {wing:w.id, sups:new Set(supsOf(w.id).map(s => s.id)), classes:w.classes.slice(), extra:new Set()});
+  renderWingChips();
+}
+function renderWingChips(){
+  const sh = S.sheet; if (!sh || sh.kind !== 'wing') return;
+  const other = wid => wid && wid !== sh.wing && S.wings[wid] ? `<span class="n">${esc(shortWing(S.wings[wid]))}</span>` : '';
+  const sups = Object.values(S.staff).filter(s => s.role === 'supervisor' && (s.active || sh.sups.has(s.id)))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+  $('#wg-sups').innerHTML = sups.map(s => `<button type="button" class="chip" data-act="wg-sup" data-id="${esc(s.id)}" aria-pressed="${sh.sups.has(s.id)}">${esc(s.name)}${sh.sups.has(s.id) ? '' : other(s.wingId)}</button>`).join('')
+    || '<span class="meta">لا يوجد مشرفون بعد. أضف حساباتهم من «الطاقم» بدور «مشرف».</span>';
+  const all = Array.from(new Set(M().classes.concat(sh.classes, Array.from(sh.extra)))).sort(clsCmp);
+  $('#wg-cls').innerHTML = all.map(c => { const on = sh.classes.includes(c), cw = wingOfClass(c);
+    return `<button type="button" class="chip" data-act="wg-cls" data-c="${esc(c)}" aria-pressed="${on}">${esc(c)}${on ? '' : other(cw && cw.id)}</button>`; }).join('')
+    || '<span class="meta">لا توجد فصول بعد. أضف الطلاب أولاً، أو اكتب الفصل.</span>';
+}
+async function saveWing(id){
+  const sh = S.sheet; if (!sh || sh.kind !== 'wing') return;
+  const name = $('#wg-name').value.trim().replace(/\s+/g, ' '), err = $('#wg-err');
+  if (name.length < 2) { err.textContent = 'اكتب اسم الجناح.'; err.hidden = false; return; }
+  if (await save(() => API.setWing(id, name, sh.classes.slice(), Array.from(sh.sups)), 'حُفظ ' + name)) { closeSheet(); reload(); }
 }
 async function setStaffActive(id, active){
   if (await save(() => API.adminUsers({op:'update', id, active}), active ? 'أُعيد تفعيل الحساب' : 'أُوقف الحساب')) { closeSheet(); reload(); }
@@ -502,7 +533,7 @@ let ABS = null;
 function openAbsence(day){
   const cl = myClasses();
   if (!canRecord()) return toast(ERR.not_allowed, {bad:true});
-  if (!cl) return toast('حدّد فصول جناحك أولاً.', {bad:true});
+  if (!cl) return toast(myWing() ? 'لم تُضف فصول جناحك بعد.' : 'لم يُحدَّد جناحك بعد.', {bad:true});
   day = day || today();
   if (!ABS || ABS.day !== day || ABS.classes.join('|') !== cl.join('|')) {
     const picks = {};
@@ -703,8 +734,12 @@ document.addEventListener('click', e => {
     case 'open-absence': openAbsenceView(el.dataset.day); break;
     case 'abs-day': { const d = +el.dataset.d; absGo(d === 0 ? today() : shiftSchoolDay(S.sheet.day, d)); break; }
     case 'abs-print': printAbsence(); break;
-    case 'sf-cls': { const c = el.dataset.c, l = S.sheet.classes, i = l.indexOf(c); if (i >= 0) l.splice(i, 1); else l.push(c); el.setAttribute('aria-pressed', String(i < 0)); break; }
-    case 'sf-cls-add': { const inp = $('#sf-cls-new'), c = normCls(inp.value); if (!c) break; if (!S.sheet.classes.includes(c)) S.sheet.classes.push(c); inp.value = ''; $('#sf-cls').innerHTML = classChips(S.sheet.classes); break; }
+    case 'sf-wing': { S.sheet.wing = el.dataset.w ? +el.dataset.w : null; $$('#sf-wing [data-act="sf-wing"]').forEach(b => b.setAttribute('aria-pressed', String(b === el))); break; }
+    case 'wing-open': openWing(+id); break;
+    case 'wg-sup': { const set = S.sheet.sups; if (set.has(id)) set.delete(id); else set.add(id); renderWingChips(); break; }
+    case 'wg-cls': { const c = el.dataset.c, l = S.sheet.classes, i = l.indexOf(c); if (i >= 0) l.splice(i, 1); else l.push(c); renderWingChips(); break; }
+    case 'wg-cls-add': { const inp = $('#wg-cls-new'), c = normCls(inp.value); if (!c) break; if (!S.sheet.classes.includes(c)) S.sheet.classes.push(c); S.sheet.extra.add(c); inp.value = ''; renderWingChips(); break; }
+    case 'wing-save': saveWing(+id); break;
     case 'back': go(S.params.from || 'students'); break;
     case 'open-action': openAction(id); break;
     case 'open-student': { const from = S.view === 'student' ? (S.params.from || 'students') : S.view; go('student', {id, from}); break; }
@@ -761,7 +796,7 @@ document.addEventListener('click', e => {
     case 'staff-save': saveStaff(id); break;
     case 'staff-active': setStaffActive(id, el.dataset.v === '1'); break;
     case 'staff-pw': resetStaffPassword(id); break;
-    case 'sf-role': { S.sheet.role = el.dataset.r; pickRole('sf-role', S.sheet.role); const f = $('#sf-cls-field'); if (f) f.hidden = S.sheet.role !== 'supervisor'; break; }
+    case 'sf-role': { S.sheet.role = el.dataset.r; pickRole('sf-role', S.sheet.role); const f = $('#sf-wing-field'); if (f) f.hidden = S.sheet.role !== 'supervisor'; break; }
     case 'sf-admin': S.sheet.admin = !S.sheet.admin; el.setAttribute('aria-checked', String(S.sheet.admin)); break;
     case 'gen-pw': $('#sf-pass').value = genPassword(); break;
   }
@@ -792,7 +827,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) c
 /* ===== التشغيل ===== */
 function teardown(){
   if (S.unsub) { S.unsub(); S.unsub = null; }
-  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.prefsDoc = null; S.orphan = {}; ABS = null;
+  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.wings = {}; S.prefsDoc = null; S.orphan = {}; ABS = null;
   S.fatal = ''; S.view = 'home'; S.params = {}; S.ver++; PUSH.busy = false;
 }
 async function enter(uid){

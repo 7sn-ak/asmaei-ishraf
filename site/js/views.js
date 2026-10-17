@@ -85,18 +85,22 @@ function attention(){
 
 /* الغياب اليومي في الرئيسية: بطاقة المشرف، وملخص شؤون الطلبة */
 function absenceCard(){
-  const cl = myClasses(), t = today();
+  const cl = myClasses(), w = myWing(), t = today();
   const head = `<div class="sec-h"><h2>الغياب اليومي</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
-  if (!cl) return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">حدّد فصول جناحك أولاً</div>
-      <div class="t2 wrap">${canAdmin() ? 'تظهر لك بعدها فصولك فقط في الرئيسية، وتسجل غيابها اليومي.' : 'يحددها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصولك فقط.'}</div></div>
-      ${canAdmin() ? `<button class="btn sm primary" data-act="staff-open" data-id="${esc(S.uid)}">تحديد فصولي</button>` : ''}</div></div>`;
+  if (!cl) {
+    const btn = !w && canAdmin() ? `<button class="btn sm primary" data-act="staff-open" data-id="${esc(S.uid)}">تحديد جناحي</button>`
+      : w && canWings() ? `<button class="btn sm primary" data-act="wing-open" data-id="${w.id}">إضافة الفصول</button>` : '';
+    return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${w ? 'لم تُضف فصول ' + esc(w.name) + ' بعد' : 'لم يُحدَّد جناحك بعد'}</div>
+      <div class="t2 wrap">${w ? (canWings() ? 'أضفها من «المزيد» ← الأجنحة، فتظهر لك فصول جناحك فقط وتسجل غيابها اليومي.' : 'يضيفها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')
+        : (canAdmin() ? 'اختر جناحك، فتظهر لك فصوله فقط في الرئيسية وتسجل غيابها اليومي.' : 'يحدده مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')}</div></div>${btn}</div></div>`;
+  }
   const sheets = cl.map(c => absSheet(t, c)).filter(Boolean);
   const sent = sheets.filter(x => x.status === 'sent'), drafts = sheets.filter(x => x.status === 'draft');
   const done = sheets.length === cl.length && !drafts.length, n = absCount(sheets);
   const line = !sheets.length ? 'لم يُسجَّل غياب اليوم بعد'
     : done ? `أُرسل لشؤون الطلبة ${fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))} · ${n} غائب`
     : `سُجّل ${sheets.length} من ${cl.length} · ${n} غائب${drafts.length ? ' · لم يُعتمد بعد' : ''}`;
-  return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${esc(line)}</div><div class="t2 wrap">${esc(cl.join(' · '))}</div></div>
+  return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${esc(line)}</div><div class="t2 wrap">${esc(w.name + ': ' + cl.join(' · '))}</div></div>
     <button class="btn sm ${done ? 'ghost' : 'primary'}" data-act="abs-open">${!sheets.length ? 'تسجيل الغياب' : done ? 'عرض' : 'إكمال واعتماد'}</button></div></div>`;
 }
 function absenceToday(){
@@ -109,6 +113,21 @@ function absenceToday(){
         <span class="t2 wrap">${nameLines(x.absent, 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
       : '<p class="calm">لم يصل غياب اليوم بعد. يصلك هنا بعد أن يعتمده المشرفون.</p>'}</div>
     ${sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : ''}`;
+}
+
+/* الأجنحة في «المزيد»: مشرفو كل جناح وفصوله، ويعدّلها مسؤول الموقع والمشرف العام والوكيل والمدير */
+function wingsSection(){
+  const ws = wingList(); if (!ws.length) return '';
+  const edit = canWings();
+  return `<section class="sec" id="m-wings"><div class="sec-h"><h2>الأجنحة</h2><span class="count num">${ws.length}</span></div>
+    <div class="list">${ws.map(w => {
+      const sups = supsOf(w.id), cls = w.classes.slice().sort(clsCmp);
+      const inner = `<span class="main"><span class="t1">${esc(w.name)}</span>
+        <span class="t2 wrap">${sups.length ? 'المشرفون: ' + esc(sups.map(s => s.name + (s.active ? '' : ' (موقوف)')).join('، ')) : 'لم يُحدَّد مشرفوه بعد'}</span>
+        <span class="t2 wrap">${cls.length ? 'الفصول: ' + esc(cls.join('، ')) : 'لم تُضف فصوله بعد'}</span></span>`;
+      return edit ? `<button class="row" data-act="wing-open" data-id="${w.id}">${inner}${icon('edit','sm')}</button>` : `<div class="row">${inner}</div>`;
+    }).join('')}</div>
+    ${edit ? '<p class="meta">اضغط الجناح لتحديد مشرفيه وفصوله. المشرف يرى في الرئيسية فصول جناحه فقط، وتصله إشعاراتها، ويسجل غيابها اليومي.</p>' : ''}</section>`;
 }
 
 /* إشعارات الجهاز (حتى والموقع مغلق): حالة هذا الجهاز في شاشة الإشعارات، وتذكير في الرئيسية */
@@ -154,7 +173,7 @@ const VIEWS = {
       const scope = m.list.filter(inScope), sc = scopeCls();
       $('#h-hello', el).innerHTML = `<div class="hello-d">${esc(fmtDay(t))}</div>
         <h1>${hr < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc(personName(S.uid))}</h1>
-        <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>${cl ? `<div class="meta">جناحك: ${esc(cl.join(' · '))}</div>` : ''}`;
+        <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>${myWing() ? `<div class="meta">${esc(myWing().name)}${cl ? ': ' + esc(cl.join(' · ')) : ' · لم تُضف فصوله بعد'}</div>` : ''}`;
       const b = topBanner() + pushHint() + demoBanner() + onboarding();
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : '';
@@ -180,7 +199,7 @@ const VIEWS = {
           <span class="cnts">${TYPE_KEYS.filter(k => c.by[k]).map(k => `<span class="cnt ty-${k}" aria-label="${TYPES[k].label} ${c.by[k]}">${c.by[k]}</span>`).join('')}</span></button>`).join('')}</div>` : '';
 
       const recent = scope.slice(0, 8);
-      $('#h-recent', el).innerHTML = `<div class="sec-h"><h2>آخر الإجراءات</h2>${recent.length ? `<button class="link" data-act="go-log" data-period="all" data-cls="${sc}">${cl ? 'كل إجراءات فصولي' : 'السجل كاملاً'}</button>` : ''}</div>` +
+      $('#h-recent', el).innerHTML = `<div class="sec-h"><h2>آخر الإجراءات</h2>${recent.length ? `<button class="link" data-act="go-log" data-period="all" data-cls="${sc}">${cl ? 'كل إجراءات جناحي' : 'السجل كاملاً'}</button>` : ''}</div>` +
         (recent.length ? `<div class="list">${recent.map(actRow).join('')}</div>` : `<div class="list"><p class="calm">${S.loaded ? 'لم يُسجَّل أي إجراء بعد.' : 'جارٍ التحميل…'}</p></div>`);
     }
   },
@@ -208,7 +227,7 @@ const VIEWS = {
       const mine = myClasses(), sel = $('#l-cls', el), sig = m.classes.join('|') + '#' + (mine || []).join('|') + '#' + f.cls;
       if (f.cls === 'mine' && !mine) f.cls = 'all';
       if (sel.dataset.sig !== sig) {
-        sel.innerHTML = `<option value="all">كل الفصول</option>` + (mine ? `<option value="mine"${f.cls==='mine' ? ' selected' : ''}>فصولي (${esc(mine.join('، '))})</option>` : '') +
+        sel.innerHTML = `<option value="all">كل الفصول</option>` + (mine ? `<option value="mine"${f.cls==='mine' ? ' selected' : ''}>جناحي (${esc(myWing().name)})</option>` : '') +
           m.classes.map(c => `<option value="${esc(c)}"${f.cls===c ? ' selected' : ''}>${esc(c)}</option>`).join('');
         sel.dataset.sig = sig;
       }
@@ -373,10 +392,11 @@ const VIEWS = {
           <button class="row" data-act="pw-open">${icon('edit','sm')}<span class="main"><span class="t1">تغيير كلمة السر</span></span></button>
           <button class="row" data-act="signout" data-confirm="اضغط مرة أخرى لتسجيل الخروج">${icon('back','sm')}<span class="main"><span class="t1">تسجيل الخروج</span></span></button>
         </section>
+        ${wingsSection()}
         <section class="sec"><div class="sec-h"><h2>الطاقم</h2><span class="count num">${shown.length}</span>${admin ? `<button class="link" data-act="staff-new">+ إضافة عضو</button>` : ''}</div>
           <div class="list">${shown.map(id => { const st = S.staff[id]; const inner = `<span class="avatar">${esc(initial(st.name))}</span>
             <span class="main"><span class="t1">${esc(st.name)}${id===S.uid ? ' (أنت)' : ''}</span><span class="t2">${esc(ROLES[st.role]||'')}${st.isAdmin ? ' · مسؤول' : ''}${admin ? ' · <span dir="ltr">' + esc(st.username) + '</span>' : ''}${st.active ? '' : ' · موقوف'}</span>
-            ${st.role === 'supervisor' ? `<span class="t2 wrap">${st.classes && st.classes.length ? 'الجناح: ' + esc(st.classes.slice().sort(clsCmp).join('، ')) : 'لم تُحدَّد فصوله بعد'}</span>` : ''}</span>`;
+            ${st.role === 'supervisor' ? `<span class="t2 wrap">${wingOf(st) ? esc(wingOf(st).name) : 'لم يُحدَّد جناحه بعد'}</span>` : ''}</span>`;
             return admin ? `<button class="row${st.active ? '' : ' off'}" data-act="staff-open" data-id="${esc(id)}">${inner}${icon('edit','sm')}</button>` : `<div class="row">${inner}</div>`; }).join('')}</div>
           ${admin ? `<p class="meta">أضف حساباً لكل زميل، ثم أرسل له رابط الموقع مع اسم المستخدم وكلمة السر. يقدر كل واحد يغيّر كلمة سره بنفسه بعد الدخول.</p>
           <div class="btns"><button class="btn ghost sm" data-act="deleted-open">${icon('trash','sm')}سجل المحذوفات</button></div>` : ''}</section>

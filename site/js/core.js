@@ -35,9 +35,9 @@ const ROLE_KEYS = ['supervisor','head','vp','principal','affairs'];
 const ROLE_ORDER = ['principal','vp','head','affairs','supervisor'];
 const ROLE_DESC = {
   supervisor:'يسجل الإجراءات والغياب اليومي لفصول جناحه، ويرسل طلب الفصل للاعتماد. تظهر له في الرئيسية فصول جناحه فقط.',
-  head:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
-  vp:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
-  principal:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب ويحدد فصول المشرفين.',
+  head:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب، ويحدد الأجنحة وفصولها ومشرفيها.',
+  vp:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب، ويحدد الأجنحة وفصولها ومشرفيها.',
+  principal:'يسجل الإجراءات، ويعتمد الفصل، ويصحّح أي قيد، ويدير قوائم الطلاب، ويحدد الأجنحة وفصولها ومشرفيها.',
   affairs:'يطّلع على الإجراءات ويتواصل مع أولياء الأمور في الاستدعاء والفصل ويسجل «تم التواصل»، ويستقبل الغياب اليومي بعد اعتماده، ويدير قوائم الطلاب. لا يسجل إجراءات.'
 };
 // تطابق الدوال approver_roles و overseer_roles و manager_roles و recorder_roles و contact_roles في قاعدة البيانات
@@ -95,7 +95,7 @@ const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s <
 
 /* ===== الحالة ===== */
 const S = {
-  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, prefsDoc:null, orphan:{},
+  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, wings:{}, prefsDoc:null, orphan:{},
   loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
   view:'home', params:{}, gate:null, sheet:null, unsub:null,
   f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
@@ -130,8 +130,16 @@ const canContact = () => CONTACTORS.includes(myRole()) || canAdmin();
 // شؤون الطلبة: عملهم في السجل التواصل مع أولياء الأمور
 const contactDuty = () => myRole() === 'affairs';
 const canDelete = a => a.createdBy === S.uid || OVERSEERS.includes(myRole()) || canAdmin();
-// فصول الجناح: للمشرف فقط (غيره يرى كل الفصول). تحددها الإدارة من «المزيد».
-const myClasses = () => { const m = me(); return m && m.role === 'supervisor' && m.classes && m.classes.length ? m.classes.slice().sort(clsCmp) : null; };
+// الأجنحة: لكل جناح فصوله، والمشرف في جناح واحد. تحددها الإدارة من «المزيد» ← الأجنحة.
+const wingList = () => Object.values(S.wings).sort((a, b) => a.sort - b.sort || a.id - b.id);
+const wingOf = st => (st && st.wingId && S.wings[st.wingId]) || null;
+const shortWing = w => String((w && w.name) || '').replace(/^جناح\s+/, '');
+const wingOfClass = c => wingList().find(w => w.classes.includes(c)) || null;
+const supsOf = id => Object.values(S.staff).filter(s => s.role === 'supervisor' && s.wingId === id).sort((a, b) => (b.active - a.active) || String(a.name).localeCompare(String(b.name), 'ar'));
+const canWings = () => OVERSEERS.includes(myRole()) || canAdmin();
+// جناح المشرف وفصوله (غير المشرف يرى كل الفصول، ومشرف بلا جناح أو جناحه بلا فصول يرى كل الفصول)
+const myWing = () => { const m = me(); return m && m.role === 'supervisor' ? wingOf(m) : null; };
+const myClasses = () => { const w = myWing(); return w && w.classes.length ? w.classes.slice().sort(clsCmp) : null; };
 const inScope = a => { const c = myClasses(); return !c || c.includes(stuCls(a)); };
 function prefs(){
   const d = S.prefsDoc || {};
@@ -186,6 +194,8 @@ const ERR = {
   bad_class:'اسم الفصل غير صالح.',
   bad_status:'لا يمكن تغيير حالة هذا القيد.',
   too_fast:'انتظر قليلاً ثم جرّب مرة أخرى.',
+  not_supervisor:'الأجنحة للمشرفين فقط.',
+  name_taken:'يوجد جناح بهذا الاسم.',
   bad_endpoint:'هذا المتصفح يستخدم خدمة إشعارات غير معروفة، فلا تصله الإشعارات والموقع مغلق.',
   bad_keys:'تعذر تفعيل الإشعارات على هذا الجهاز.',
   forbidden:'هذا الإجراء للمسؤولين فقط.',
@@ -229,14 +239,15 @@ function setPrefs(patch){
 async function loadData(){
   const since = new Date(Date.now() - 400 * 864e5).toISOString();
   const d = await API.loadAll(since, addDays(today(), -30));
-  const staff = {}, students = {}, actions = {}, absence = {};
+  const staff = {}, students = {}, actions = {}, absence = {}, wings = {};
   (d.absence || []).forEach(x => { absence[x.id] = x; });
+  (d.wings || []).forEach(w => { wings[w.id] = w; });
   d.staff.forEach(s => { staff[s.id] = s; });
   d.students.forEach(s => { students[s.id] = s; });
   d.actions.forEach(a => { actions[a.id] = a; });
   d.logs.forEach(l => { const a = actions[l.actionId]; if (a) a.log.push(l); });
   Object.values(actions).forEach(a => a.log.sort((x, y) => x.t - y.t || x.id - y.id));
-  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.prefsDoc = d.prefs;
+  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.wings = wings; S.prefsDoc = d.prefs;
   S.loaded = true; S.fatal = ''; S.ver++;
 }
 async function reload(){
@@ -270,6 +281,10 @@ const RT = {
   student(ev, row, oldId){ if (ev === 'DELETE') delete S.students[oldId]; else if (row) S.students[row.id] = row; bump(); },
   staff(ev, row, oldId){
     if (ev === 'DELETE') delete S.staff[oldId]; else if (row) S.staff[row.id] = row;
+    S.ver++; setGate();
+  },
+  wing(ev, row, oldId){
+    if (ev === 'DELETE') delete S.wings[oldId]; else if (row) S.wings[row.id] = row;
     S.ver++; setGate();
   },
   absence(ev, row, oldId){

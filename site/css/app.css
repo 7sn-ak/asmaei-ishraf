@@ -297,6 +297,8 @@ details.more-box[open]{padding-bottom:12px}
 .pw button{position:absolute;inset-block:0;inset-inline-end:4px;padding:0 10px;font-size:14px;font-weight:600;color:var(--stamp)}
 .gen{display:flex;gap:8px}
 .gen input{flex:1;font-family:var(--f-code);direction:ltr;text-align:left}
+.addrow{display:flex;gap:8px;align-items:center}
+.addrow input{flex:1}
 .cred{display:grid;gap:4px;padding:12px 14px;border:1.5px dashed var(--stamp);border-radius:var(--r-m);background:var(--stamp-soft)}
 .cred b{font-family:var(--f-code);direction:ltr;text-align:left;font-size:16px;user-select:all}
 .off{opacity:.55}
