@@ -104,6 +104,10 @@ button.row:active,.row.tap:active{background:var(--sunk)}
 .when{font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .grp{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13.5px;font-weight:700;color:var(--ink-2);background:var(--sunk);border-top:1px solid var(--rule)}
 .grp:first-child{border-top:0}
+/* «اليوم»: المفصولون بالأحمر، وحضور ولي الأمر بالبرتقالي */
+.grp.bad{color:var(--bad);background:var(--bad-bg)}
+.grp.warn{color:var(--warn);background:var(--warn-bg)}
+.banner b{font-weight:700}
 .row-acts{display:flex;gap:6px;flex:none}
 .row.stacked{flex-wrap:wrap;row-gap:10px}
 .row.stacked>.main{flex-basis:100%}

@@ -153,9 +153,39 @@ const stuOf = a => S.students[a.studentId];
 const stuName = a => (stuOf(a) && stuOf(a).name) || a.studentName || 'طالب';
 const stuCls = a => (stuOf(a) && stuOf(a).cls) || a.cls || '';
 const isOpen = a => a.type !== 'report' && a.status === FIRST[a.type];
-const activeSusp = sid => (M().byStu[sid] || []).find(a => a.type === 'suspend' && a.status === 'approved' && a.suspendFrom && a.suspendTo && a.suspendFrom <= today() && today() <= a.suspendTo);
+// مفصول في يوم معيّن: فصل معتمد واليوم ضمن مدته (لا يحضر الطالب إلى المدرسة)
+const suspOn = (a, d) => a.type === 'suspend' && a.status === 'approved' && !!a.suspendFrom && !!a.suspendTo && a.suspendFrom <= d && d <= a.suspendTo;
+const suspNow = a => suspOn(a, today());
+const activeSusp = sid => (M().byStu[sid] || []).find(suspNow);
+// رقم يوم الدوام داخل مدة الفصل (اليوم 2 من 3)، و0 في العطلة
+const schoolDayNo = (from, d) => { if (!from || isWeekend(d) || d < from) return 0; let n = 0, x = from, g = 0; while (x <= d && g++ < 90) { if (!isWeekend(x)) n++; x = addDays(x, 1); } return n; };
+// استدعاء ينتظر حضور ولي الأمر حتى يوم معيّن (اليوم إن لم يُحدَّد): موعده فيه، أو فات ولم يُسجَّل الحضور
+const summonDue = (a, d) => a.type === 'summon' && a.status === 'scheduled' && !!a.summonDate && a.summonDate <= (d || today());
 const stInfo = a => ((STATUS[a.type] || {})[a.status]) || {l:a.status || '', tone:'mute'};
-const pill = a => { if (a.type === 'report') return ''; const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`; };
+const pill = a => {
+  if (a.type === 'report') return '';
+  // الأوضح لليوم: حضور ولي الأمر اليوم، أو فات موعده، أو الطالب مفصول الآن
+  if (a.type === 'summon' && a.status === 'scheduled' && a.summonDate && a.summonDate <= today())
+    return a.summonDate === today() ? '<span class="pill tone-warn">الحضور اليوم</span>' : '<span class="pill tone-bad">فات الموعد</span>';
+  if (suspNow(a)) return '<span class="pill tone-bad">مفصول الآن</span>';
+  const s = stInfo(a); return `<span class="pill tone-${s.tone}">${esc(s.l)}</span>`;
+};
+// تنبيه أعلى القيد وملف الطالب: موعد حضور ولي الأمر، أو مدة الفصل
+function timeBanner(a){
+  const t = today();
+  if (a.type === 'summon' && a.status === 'scheduled' && a.summonDate) {
+    const at = a.summonTime ? ' الساعة ' + fmtHM(a.summonTime) : '';
+    if (a.summonDate === t) return `<div class="banner warn">${icon('summon')}<div><b>مطلوب حضور ولي الأمر اليوم${esc(at)}</b></div></div>`;
+    if (a.summonDate > t) return `<div class="banner">${icon('summon')}<div>موعد حضور ولي الأمر ${esc(dayLabel(a.summonDate))}${esc(at)}</div></div>`;
+    return `<div class="banner bad">${icon('alert')}<div><b>فات موعد حضور ولي الأمر (${esc(dayLabel(a.summonDate))})</b><div class="meta">${canRecord() ? 'سجّل «حضر» أو «لم يحضر»، أو غيّر الموعد.' : 'لم يُسجَّل الحضور بعد.'}</div></div></div>`;
+  }
+  if (a.type === 'suspend' && a.status === 'approved' && a.suspendFrom && a.suspendTo) {
+    if (suspNow(a)) { const n = schoolDayNo(a.suspendFrom, t);
+      return `<div class="banner bad">${icon('suspend')}<div><b>مفصول الآن حتى ${esc(fmtDay(a.suspendTo))}</b><div class="meta">لا يحضر إلى المدرسة طوال مدة الفصل${n ? ' · اليوم ' + n + ' من ' + (a.suspendDays || n) : ''}.</div></div></div>`; }
+    if (a.suspendFrom > t) return `<div class="banner">${icon('suspend')}<div>يبدأ الفصل ${esc(dayLabel(a.suspendFrom))}${a.suspendTo !== a.suspendFrom ? ' وينتهي ' + esc(dayLabel(a.suspendTo)) : ''}.</div></div>`;
+  }
+  return '';
+}
 /* التواصل مع ولي الأمر */
 // يمكن تسجيله الآن: استدعاء موعده قائم، أو فصل معتمد (قاعدة البيانات تشترط اعتماد الفصل)
 const contactOpen = a => (a.type === 'summon' && a.status === 'scheduled') || (a.type === 'suspend' && a.status === 'approved');

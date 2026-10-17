@@ -33,8 +33,8 @@ function quickRow(a, moves, sub){
 }
 // «فصولي» في السجل للمشرف الذي حُددت له فصول جناحه، وإلا كل الفصول
 const scopeCls = () => myClasses() ? 'mine' : 'all';
-function grp(title, n, type){
-  return `<div class="grp">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all" data-cls="${scopeCls()}">عرض الكل</button>` : ''}</div>`;
+function grp(title, n, type, tone){
+  return `<div class="grp${tone ? ' ' + tone : ''}">${esc(title)} <span class="num">· ${n}</span>${type ? `<button class="link" data-act="go-log" data-type="${type}" data-status="open" data-period="all" data-cls="${scopeCls()}">عرض الكل</button>` : ''}</div>`;
 }
 // صف «تواصل مطلوب»: اتصال مباشر بولي الأمر ثم «تم التواصل»
 function contactRow(a){
@@ -55,10 +55,8 @@ function contactAttention(){
 }
 function attention(){
   if (contactDuty()) return contactAttention();
-  const role = myRole(), t = today(), list = M().list.filter(inScope);
+  const role = myRole(), list = M().list.filter(inScope);
   const pend = list.filter(a => a.type==='suspend' && a.status==='pending');
-  const sums = list.filter(a => a.type==='summon' && a.status==='scheduled' && a.summonDate && a.summonDate <= t)
-    .sort((a,b) => (a.summonDate + (a.summonTime||'')).localeCompare(b.summonDate + (b.summonTime||'')));
   // التقارير تُحفظ في سجل الطالب فقط، والتعهدات لا تظهر للمشرف العام والوكيل
   const pledges = NO_PLEDGES_HOME.includes(role) ? [] : list.filter(a => a.type==='pledge' && a.status==='open');
   let html = '', total = 0;
@@ -68,12 +66,6 @@ function attention(){
     html += pend.slice(0,4).map(a => quickRow(a, isApprover() ? [['approved','اعتماد','ok'],['rejected','رفض','bad']] : null,
       `${daysTxt(a.suspendDays||1)} · يبدأ ${shortDay(a.suspendFrom)} · ${stuCls(a)}`)).join('');
   }
-  if (sums.length) {
-    total += sums.length;
-    html += grp('استدعاءات اليوم', sums.length, sums.length > 5 && 'summon');
-    html += sums.slice(0,5).map(a => quickRow(a, [['attended','حضر','ok'],['absent','لم يحضر','bad']],
-      (a.summonDate < t ? 'متأخر · كان الموعد ' + dayLabel(a.summonDate) : 'الساعة ' + (fmtHM(a.summonTime) || '—')) + ' · ' + stuCls(a))).join('');
-  }
   if (pledges.length) {
     total += pledges.length;
     html += grp('تعهدات بانتظار التوقيع', pledges.length, pledges.length > 3 && 'pledge');
@@ -81,6 +73,36 @@ function attention(){
   }
   return `<div class="sec-h"><h2>يحتاج متابعة</h2>${total ? `<span class="count num">${total}</span>` : ''}</div>` +
     (total ? `<div class="list">${html}</div>` : `<div class="list"><p class="calm">لا يوجد ما يحتاج متابعة الآن.</p></div>`);
+}
+
+/* «اليوم» في الرئيسية (المشرف والمشرف العام والوكيل والمدير): من لا يحضر إلى المدرسة لأنه مفصول،
+   ومن يجب أن يحضر ولي أمره. المشرف يرى طلاب جناحه فقط. في عطلة الجمعة والسبت تعرض يوم الدوام القادم. */
+function todayCard(){
+  if (!canRecord()) return '';
+  const t = today(), d = firstSchoolDay(t), dl = d === t ? 'اليوم' : shortDay(d), next = firstSchoolDay(addDays(d, 1));
+  const list = M().list.filter(inScope), seen = new Set(), uniq = a => !seen.has(a.studentId) && seen.add(a.studentId);
+  const byEnd = (a, b) => a.suspendTo.localeCompare(b.suspendTo) || clsCmp(stuCls(a), stuCls(b)) || stuName(a).localeCompare(stuName(b), 'ar');
+  const susp = list.filter(a => suspOn(a, d)).sort(byEnd).filter(uniq);
+  const soon = list.filter(a => a.type === 'suspend' && a.status === 'approved' && a.suspendFrom === next).sort(byEnd).filter(uniq);
+  const when = a => (a.summonDate || '') + ' ' + (a.summonTime || '');
+  const due = list.filter(a => summonDue(a, d)).sort((a, b) => when(a).localeCompare(when(b)));
+  const sums = due.filter(a => a.summonDate >= t), late = due.filter(a => a.summonDate < t);
+  const sRow = (a, sub) => `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico('suspend')}
+    <span class="main"><span class="t1 wrap">${esc(stuName(a))}</span><span class="t2 wrap">${esc(sub)}</span></span></button>`;
+  const came = [['attended','حضر','ok'],['absent','لم يحضر','bad']];
+  let html = '';
+  if (susp.length) html += grp('مفصولون: لا يحضرون إلى المدرسة', susp.length, null, 'bad') +
+    susp.map(a => { const n = schoolDayNo(a.suspendFrom, d);
+      return sRow(a, `${stuCls(a)} · حتى ${shortDay(a.suspendTo)}${n ? ' · اليوم ' + n + ' من ' + (a.suspendDays || n) : ''}`); }).join('');
+  if (soon.length) html += grp('يبدأ فصلهم ' + shortDay(next), soon.length) +
+    soon.map(a => sRow(a, `${stuCls(a)} · ${daysTxt(a.suspendDays || 1)}، حتى ${shortDay(a.suspendTo)}`)).join('');
+  if (sums.length) html += grp('مطلوب حضور ولي الأمر ' + dl, sums.length, null, 'warn') +
+    sums.map(a => quickRow(a, a.summonDate === t ? came : null,
+      (a.summonDate === d ? '' : shortDay(a.summonDate) + ' ') + 'الساعة ' + (fmtHM(a.summonTime) || '—') + ' · ' + stuCls(a) + (a.violation ? ' · ' + a.violation : ''))).join('');
+  if (late.length) html += grp('فات موعدها ولم يُسجَّل حضور ولي الأمر', late.length, late.length > 5 && 'summon', 'bad') +
+    late.slice(-5).reverse().map(a => quickRow(a, came, 'كان الموعد ' + dayLabel(a.summonDate) + ' · ' + stuCls(a))).join('');
+  return `<div class="sec-h"><h2>${d === t ? 'اليوم' : 'يوم الدوام القادم'}</h2><span class="meta">${esc(fmtDay(d))}</span></div>` +
+    `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ${esc(dl)}.</p>`}</div>`;
 }
 
 /* الغياب اليومي في الرئيسية: بطاقة المشرف، وملخص شؤون الطلبة */
@@ -170,6 +192,7 @@ const VIEWS = {
       el.innerHTML = `<div class="stack">
         <section class="hello" id="h-hello"></section>
         <div id="h-banner" class="stack"></div>
+        <section class="sec" id="h-today" hidden></section>
         <section class="sec" id="h-abs" hidden></section>
         <section class="sec" id="h-attn"></section>
         <section class="sec" id="h-week"></section>
@@ -185,6 +208,8 @@ const VIEWS = {
         <span class="rolechip">${esc(ROLES[myRole()]||'')}</span>${myWing() ? `<div class="meta">${esc(myWing().name)}${cl ? ': ' + esc(cl.join(' · ')) : ' · لم تُضف فصوله بعد'}</div>` : ''}`;
       const b = topBanner() + pushHint() + demoBanner() + onboarding();
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
+      const ht = $('#h-today', el), td = todayCard();
+      ht.innerHTML = td; ht.hidden = !td;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
       $('#h-attn', el).innerHTML = attention();
@@ -329,10 +354,13 @@ const VIEWS = {
       const name = s ? s.name : acts[0].studentName, cls = s ? s.cls : acts[0].cls;
       const by = {}; acts.forEach(a => { by[a.type] = (by[a.type]||0) + 1; });
       const sus = activeSusp(id), recent = acts.filter(a => (a.date||'') >= addDays(today(), -30)).length;
+      // فصل معتمد لم يبدأ بعد: الأقرب
+      const upSus = sus ? null : acts.filter(a => a.type === 'suspend' && a.status === 'approved' && (a.suspendFrom || '') > today()).sort((a, b) => a.suspendFrom.localeCompare(b.suspendFrom))[0];
       const phone = s && s.phone;
       root.innerHTML = back + `
         <section class="phead"><span class="avatar lg">${esc(initial(name))}</span><div><h1>${esc(name)}</h1><div class="meta">${esc(cls ? 'الفصل ' + cls : 'بدون فصل')}${s ? '' : ' · حُذف من القائمة'}</div></div></section>
-        ${sus ? `<div class="banner bad">${icon('suspend')}<div>مفصول حالياً من ${esc(fmtDay(sus.suspendFrom))} حتى ${esc(fmtDay(sus.suspendTo))}.</div></div>` : ''}
+        ${sus ? timeBanner(sus) : upSus ? timeBanner(upSus) : ''}
+        ${acts.filter(a => a.type === 'summon' && a.status === 'scheduled' && a.summonDate).map(timeBanner).join('')}
         ${phone ? `<div class="contact"><span class="meta">ولي الأمر</span><span class="phone">${esc(phone)}</span><span class="grow"></span>
           <button class="btn sm ghost" data-act="copy" data-text="${esc(phone)}">${icon('copy','sm')}نسخ</button>
           <a class="btn sm ghost" href="https://wa.me/${esc(waNum(phone))}" target="_blank" rel="noopener">${icon('chat','sm')}واتساب</a>

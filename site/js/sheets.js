@@ -242,6 +242,7 @@ function renderActionBody(){
   body.innerHTML = `
     <div class="ad-top">${tchip(a.type)}<span class="code">${esc(code(a.id))}</span><span class="grow"></span>${stamp}</div>
     <button class="ad-stu" data-act="open-student" data-id="${esc(a.studentId)}">${esc(stuName(a))}<span>${esc(stuCls(a))}</span></button>
+    ${timeBanner(a)}
     <dl class="kv">
       <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}</dd></div>
       <div><dt>تاريخ الواقعة</dt><dd>${esc(fmtDay(a.date))}</dd></div>
