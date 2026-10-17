@@ -425,14 +425,14 @@ const VIEWS = {
         <div class="page-h"><h1>المزيد</h1></div>
         <section class="list">
           <div class="setrow"><span class="avatar lg">${esc(initial(my.name))}</span>
-            <div class="main"><div class="t1">${esc(my.name||'')}</div><div class="t2">${esc(ROLES[my.role]||'')} · <span dir="ltr">${esc(my.username||'')}</span>${admin ? ' · مسؤول الموقع' : ''}</div></div></div>
+            <div class="main"><div class="t1">${esc(my.name||'')}</div><div class="t2 wrap">${esc(ROLES[my.role]||'')} · <span dir="ltr">${esc(my.username||'')}</span>${admin ? ' · مسؤول الموقع' : ''}</div></div></div>
           <button class="row" data-act="pw-open">${icon('edit','sm')}<span class="main"><span class="t1">تغيير كلمة السر</span></span></button>
           <button class="row" data-act="signout" data-confirm="اضغط مرة أخرى لتسجيل الخروج">${icon('back','sm')}<span class="main"><span class="t1">تسجيل الخروج</span></span></button>
         </section>
         ${wingsSection()}
         <section class="sec"><div class="sec-h"><h2>الطاقم</h2><span class="count num">${shown.length}</span>${admin ? `<button class="link" data-act="staff-new">+ إضافة عضو</button>` : ''}</div>
           <div class="list">${shown.map(id => { const st = S.staff[id]; const inner = `<span class="avatar">${esc(initial(st.name))}</span>
-            <span class="main"><span class="t1">${esc(st.name)}${id===S.uid ? ' (أنت)' : ''}</span><span class="t2">${esc(ROLES[st.role]||'')}${st.isAdmin ? ' · مسؤول' : ''}${admin ? ' · <span dir="ltr">' + esc(st.username) + '</span>' : ''}${st.active ? '' : ' · موقوف'}</span>
+            <span class="main"><span class="t1">${esc(st.name)}${id===S.uid ? ' (أنت)' : ''}</span><span class="t2 wrap">${esc(ROLES[st.role]||'')}${st.isAdmin ? ' · مسؤول' : ''}${admin ? ' · <span dir="ltr">' + esc(st.username) + '</span>' : ''}${st.active ? '' : ' · موقوف'}</span>
             ${st.role === 'supervisor' ? `<span class="t2 wrap">${wingOf(st) ? esc(wingOf(st).name) : 'لم يُحدَّد جناحه بعد'}</span>` : ''}</span>`;
             return admin ? `<button class="row${st.active ? '' : ' off'}" data-act="staff-open" data-id="${esc(id)}">${inner}${icon('edit','sm')}</button>` : `<div class="row">${inner}</div>`; }).join('')}</div>
           ${admin ? `<p class="meta">أضف حساباً لكل زميل، ثم أرسل له رابط الموقع مع اسم المستخدم وكلمة السر. يقدر كل واحد يغيّر كلمة سره بنفسه بعد الدخول.</p>
