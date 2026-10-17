@@ -535,6 +535,7 @@ function openAbsence(day){
   if (!canRecord()) return toast(ERR.not_allowed, {bad:true});
   if (!cl) return toast(myWing() ? 'لم تُضف فصول جناحك بعد.' : 'لم يُحدَّد جناحك بعد.', {bad:true});
   day = day || today();
+  if (isWeekend(day)) return toast(ERR.weekend);
   if (!ABS || ABS.day !== day || ABS.classes.join('|') !== cl.join('|')) {
     const picks = {};
     cl.forEach(c => { const x = absSheet(day, c); picks[c] = new Set(x ? x.absent.map(a => a.id) : []); });

@@ -94,6 +94,9 @@ function absenceCard(){
       <div class="t2 wrap">${w ? (canWings() ? 'أضفها من «المزيد» ← الأجنحة، فتظهر لك فصول جناحك فقط وتسجل غيابها اليومي.' : 'يضيفها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')
         : (canAdmin() ? 'اختر جناحك، فتظهر لك فصوله فقط في الرئيسية وتسجل غيابها اليومي.' : 'يحدده مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')}</div></div>${btn}</div></div>`;
   }
+  // الجمعة والسبت عطلة: لا غياب
+  if (isWeekend(t)) return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">اليوم عطلة نهاية الأسبوع</div>
+      <div class="t2 wrap">لا يُسجَّل غياب يوم الجمعة والسبت. يعود التسجيل يوم الأحد.</div></div></div></div>`;
   const sheets = cl.map(c => absSheet(t, c)).filter(Boolean);
   const sent = sheets.filter(x => x.status === 'sent'), drafts = sheets.filter(x => x.status === 'draft');
   const done = sheets.length === cl.length && !drafts.length, n = absCount(sheets);
@@ -105,6 +108,12 @@ function absenceCard(){
 }
 function absenceToday(){
   const t = today();
+  // الجمعة والسبت عطلة: لا غياب، ورابط لآخر يوم دوام (للاطلاع والطباعة)
+  if (isWeekend(t)) {
+    const last = shiftSchoolDay(t, -1), n = absSent(last);
+    return `<div class="sec-h"><h2>الغياب اليومي</h2><button class="link" data-act="open-absence" data-day="${last}">غياب ${esc(fmtDay(last, {weekday:'long'}))}${n.length ? ' والطباعة' : ''}</button></div>
+      <div class="list"><p class="calm">اليوم عطلة نهاية الأسبوع، لا يوجد غياب.${n.length ? ` آخر يوم دوام (${esc(fmtDay(last, {weekday:'long'}))}): ${absCount(n)} غائب.` : ''}</p></div>`;
+  }
   const sent = absList().filter(x => x.day === t && x.status === 'sent').sort((a, b) => clsCmp(a.cls, b.cls));
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
   return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span>` : ''}<button class="link" data-act="open-absence" data-day="${t}">${sent.length ? 'التفاصيل والطباعة' : 'الأيام السابقة'}</button></div>
