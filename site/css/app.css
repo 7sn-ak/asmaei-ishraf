@@ -111,6 +111,7 @@ button.row:active,.row.tap:active{background:var(--sunk)}
 .grp.info{color:var(--info);background:var(--info-bg)}
 .abs-tags.inl{display:inline-flex;margin:0 4px;vertical-align:1px}
 .ty-viol{--c:var(--info);--cb:var(--info-bg)}
+.ty-late{--c:var(--warn);--cb:var(--warn-bg)}
 .vs-who{margin:0;border-radius:0;border-bottom:1px solid var(--rule)}
 .banner b{font-weight:700}
 .row-acts{display:flex;gap:6px;flex:none}
@@ -382,8 +383,7 @@ details.more-box[open]{padding-bottom:12px}
 .pr-sub{font-size:11pt}
 .pr-title{margin-inline-start:auto;text-align:left}
 .pr-title b{display:block;font-size:15pt}
-.pr-sum{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
-.pr-late{width:60%}
+.pr-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .pr-sum div{border:1px solid #000;border-radius:6px;padding:6px 8px;text-align:center}
 .pr-sum span{display:block;font-size:10.5pt}
 .pr-sum b{font-size:16pt;font-variant-numeric:tabular-nums}

@@ -1,6 +1,6 @@
 -- حذف البيانات التجريبية كلها (التي أضافها supabase/seed_demo.sql) قبل التشغيل الفعلي:
 -- الطلاب والقيود التي تبدأ معرّفاتها بـ dd000000-، وأي قيد سُجّل على طالب تجريبي أثناء التجربة،
--- وأوراق الغياب التي جُرّبت عليهم، وسير هذه القيود، وآثارها في سجل المحذوفات. لا يلمس أي طالب أو قيد آخر.
+-- وأوراق الغياب والتأخير والمخالفات التي جُرّبت عليهم، وسير هذه القيود، وآثارها في سجل المحذوفات. لا يلمس أي طالب أو قيد آخر.
 -- يُشغَّل من محرر SQL في Supabase عند طلب مسؤول الموقع. ويبقى في سجل المحذوفات سطر واحد يوضح ما حُذف.
 -- ملف تشغيل يدوي؛ لا يدخل ضمن migrations.
 do $clear$
@@ -9,6 +9,7 @@ declare
   v_students int;
   v_absence int;
   v_viol int;
+  v_late int;
 begin
   -- أوراق الغياب التجريبية: فيها طالب تجريبي (غائباً أو متأخراً أو عليه مخالفة)، أو لفصل كل طلابه تجريبيون
   with d as (
@@ -20,15 +21,35 @@ begin
             and not exists (select 1 from public.students s where s.cls = a.cls and s.id::text not like 'dd000000-%'))
     returning 1
   ) select count(*) into v_absence from d;
-  -- مخالفات الزي والشعر على طلاب تجريبيين، أو لفصل كل طلابه تجريبيون
+  -- مخالفات الزي والشعر والتأخير: الورقة التي كل من فيها تجريبيون (أو لفصل كل طلابه تجريبيون) تُحذف،
+  -- والورقة المختلطة يُحذف منها الطلاب التجريبيون فقط، فيبقى سجل الطلاب الحقيقيين
   with d as (
     delete from public.violation_sheets v
-     where exists (select 1 from jsonb_each(v.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
-                    where e->>'id' like 'dd000000-%')
+     where (exists (select 1 from jsonb_each(v.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
+                     where e->>'id' like 'dd000000-%')
+            and not exists (select 1 from jsonb_each(v.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
+                             where e->>'id' not like 'dd000000-%'))
         or (exists (select 1 from public.students s where s.cls = v.cls and s.id::text like 'dd000000-%')
             and not exists (select 1 from public.students s where s.cls = v.cls and s.id::text not like 'dd000000-%'))
     returning 1
   ) select count(*) into v_viol from d;
+  update public.violation_sheets v
+     set marks = (select coalesce(jsonb_object_agg(m.key, (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(m.value) e
+                                                          where e->>'id' not like 'dd000000-%')), '{}'::jsonb)
+                    from jsonb_each(v.marks) m where jsonb_typeof(m.value) = 'array')
+   where exists (select 1 from jsonb_each(v.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
+                  where e->>'id' like 'dd000000-%');
+  with d as (
+    delete from public.late_sheets l
+     where (exists (select 1 from jsonb_array_elements(l.late) e where e->>'id' like 'dd000000-%')
+            and not exists (select 1 from jsonb_array_elements(l.late) e where e->>'id' not like 'dd000000-%'))
+        or (exists (select 1 from public.students s where s.cls = l.cls and s.id::text like 'dd000000-%')
+            and not exists (select 1 from public.students s where s.cls = l.cls and s.id::text not like 'dd000000-%'))
+    returning 1
+  ) select count(*) into v_late from d;
+  update public.late_sheets l
+     set late = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(l.late) e where e->>'id' not like 'dd000000-%')
+   where exists (select 1 from jsonb_array_elements(l.late) e where e->>'id' like 'dd000000-%');
   -- القيود أولاً، قبل أن يصير student_id فارغاً بحذف الطالب
   with d as (
     delete from public.actions
@@ -43,8 +64,8 @@ begin
      and (row_data->>'id' like 'dd000000-%' or row_data->>'student_id' like 'dd000000-%');
   if v_actions + v_students > 0 then
     insert into public.deleted_log (table_name, row_data, deleted_by)
-      values ('demo', jsonb_build_object('actions', v_actions, 'students', v_students, 'absence', v_absence, 'violations', v_viol),
+      values ('demo', jsonb_build_object('actions', v_actions, 'students', v_students, 'absence', v_absence, 'violations', v_viol, 'late', v_late),
               (select id from public.staff where is_admin and active order by created_at limit 1));
   end if;
-  raise notice 'حُذف من البيانات التجريبية: % إجراء و% طالب و% ورقة غياب و% ورقة مخالفات', v_actions, v_students, v_absence, v_viol;
+  raise notice 'حُذف من البيانات التجريبية: % إجراء و% طالب و% ورقة غياب و% ورقة مخالفات و% ورقة تأخير', v_actions, v_students, v_absence, v_viol, v_late;
 end $clear$;

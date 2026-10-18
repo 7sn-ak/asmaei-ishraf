@@ -95,7 +95,7 @@ const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s <
 
 /* ===== الحالة ===== */
 const S = {
-  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, violations:{}, wings:{}, prefsDoc:null, orphan:{},
+  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, violations:{}, late:{}, lateOf:{}, lateFetch:{}, wings:{}, prefsDoc:null, orphan:{},
   loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
   view:'home', params:{}, gate:null, sheet:null, unsub:null,
   f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
@@ -227,6 +227,7 @@ const ERR = {
   not_supervisor:'الأجنحة للمشرفين فقط.',
   weekend:'الجمعة والسبت عطلة، لا يُسجَّل فيهما غياب.',
   absent_marked:'الطالب مسجّل غائب اليوم، فلا يُسجَّل عليه تأخير أو مخالفة.',
+  late_marked:'الطالب مسجّل متأخراً اليوم، فلا يُسجَّل غائباً.',
   bad_marks:'تعذّر حفظ الورقة. أغلق النافذة وافتحها من جديد.',
   name_taken:'يوجد جناح بهذا الاسم.',
   bad_endpoint:'هذا المتصفح يستخدم خدمة إشعارات غير معروفة، فلا تصله الإشعارات والموقع مغلق.',
@@ -272,16 +273,17 @@ function setPrefs(patch){
 async function loadData(){
   const since = new Date(Date.now() - 400 * 864e5).toISOString();
   const d = await API.loadAll(since, addDays(today(), -30));
-  const staff = {}, students = {}, actions = {}, absence = {}, violations = {}, wings = {};
+  const staff = {}, students = {}, actions = {}, absence = {}, violations = {}, late = {}, wings = {};
   (d.absence || []).forEach(x => { absence[x.id] = x; });
   (d.violations || []).forEach(x => { violations[x.id] = x; });
+  (d.late || []).forEach(x => { late[x.id] = x; });
   (d.wings || []).forEach(w => { wings[w.id] = w; });
   d.staff.forEach(s => { staff[s.id] = s; });
   d.students.forEach(s => { students[s.id] = s; });
   d.actions.forEach(a => { actions[a.id] = a; });
   d.logs.forEach(l => { const a = actions[l.actionId]; if (a) a.log.push(l); });
   Object.values(actions).forEach(a => a.log.sort((x, y) => x.t - y.t || x.id - y.id));
-  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.violations = violations; S.wings = wings; S.prefsDoc = d.prefs;
+  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.violations = violations; S.late = late; S.wings = wings; S.prefsDoc = d.prefs;
   S.loaded = true; S.fatal = ''; S.ver++;
 }
 async function reload(){
@@ -327,6 +329,10 @@ const RT = {
     const prev = S.absence[row.id];
     S.absence[row.id] = row;
     if (row.status === 'sent' && (!prev || prev.status !== 'sent')) absAlert(row);
+    bump();
+  },
+  late(ev, row, oldId){
+    if (ev === 'DELETE') delete S.late[oldId]; else if (row) S.late[row.id] = row;
     bump();
   },
   violation(ev, row, oldId){
@@ -438,31 +444,33 @@ document.addEventListener('pointerdown', () => {
 const absList = () => Object.values(S.absence);
 const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
 const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
-// ما يُسجَّل مع الغياب في ورقة الفصل: التأخير الصباحي (مشرف الجناح، ويصل لشؤون الطلبة). النوع نفسه في
-// private.mark_kinds() في قاعدة البيانات؛ لإضافة نوع أضفه هنا وهناك.
-const MARKS = {late:{l:'متأخر', mode:'التأخير', g:'التأخير الصباحي'}};
-const MARK_KEYS = Object.keys(MARKS);
 // مخالفات الزي والشعر: يسجلها المشرف العام وحده، ويصل إشعارها لمشرف جناح الطالب فقط (private.viol_kinds())
 const VIOLS = {uniform:{l:'الزي', g:'مخالفة الزي'}, hair:{l:'الشعر', g:'مخالفة الشعر'}};
 const VIOL_KEYS = Object.keys(VIOLS);
 const marksOf = (x, k) => (x && x.marks && Array.isArray(x.marks[k])) ? x.marks[k] : [];
-const lateCount = sheets => sheets.reduce((n, x) => n + marksOf(x, 'late').length, 0);
 const violTxt = n => n + (n >= 2 && n <= 10 ? ' مخالفات' : ' مخالفة');
-// «3 غائب · 2 متأخر»: التأخير إن وُجد
-const countsTxt = (a, l) => [a + ' غائب', l ? l + ' متأخر' : ''].filter(Boolean).join(' · ');
-const dailyTxt = sheets => countsTxt(absCount(sheets), lateCount(sheets));
-const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : `<span class="mk mk-${k}">${esc((MARKS[k] || VIOLS[k] || {}).l || '')}</span>`;
-// طلاب الورقة مع ما سُجّل على كل واحد: الغائبون أولاً، ثم المتأخرون، ثم المخالفات
-function sheetPeople(x){
-  const by = new Map(), add = (a, k) => { const p = by.get(a.id) || {id:a.id, name:a.name, kinds:[]}; p.kinds.push(k); by.set(a.id, p); };
-  x.absent.forEach(a => add(a, 'absent'));
-  MARK_KEYS.forEach(k => marksOf(x, k).forEach(a => add(a, k)));
-  const rank = p => p.kinds.includes('absent') ? 0 : p.kinds.includes('late') ? 1 : 2;
-  return Array.from(by.values()).sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name), 'ar'));
+const dailyTxt = sheets => absCount(sheets) + ' غائب';
+const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : k === 'late' ? '<span class="mk mk-late">متأخر</span>'
+  : `<span class="mk mk-${k}">${esc((VIOLS[k] || {}).l || '')}</span>`;
+/* ===== التأخير الصباحي: خانة منفصلة عن الغياب، يُحفظ في سجل الطالب ولا يُرسل لأحد ===== */
+const lateList = () => Object.values(S.late);
+const lateSheet = (day, cls) => lateList().find(x => x.day === day && x.cls === cls);
+const lateIdsOf = (day, cls) => new Set(((lateSheet(day, cls) || {}).late || []).map(e => e.id));
+// تأخير الطالب في سجله: الأيام الثلاثون المحمّلة، وما قبلها يُجلب عند فتح ملفه
+function lateEntries(id){
+  const since = addDays(today(), -30), out = new Map();
+  (S.lateOf[id] || []).forEach(l => { if (l.day < since) out.set(l.day + '|' + l.cls, l); });
+  lateList().forEach(x => { if (x.day >= since) x.late.forEach(e => { if (e.id === id) out.set(x.day + '|' + x.cls, {day:x.day, cls:x.cls, by:e.by || x.updatedBy, at:e.at || x.updatedAt}); }); });
+  return Array.from(out.values()).sort((a, b) => (b.at || 0) - (a.at || 0));
 }
-// سطر لكل طالب: الغائب باسمه، والمتأخر وصاحب المخالفة مع ما سُجّل عليه
-const peopleLines = (x, empty) => { const ps = sheetPeople(x);
-  return ps.length ? ps.map(p => `<span class="nl">${esc(p.name)}${p.kinds.filter(k => k !== 'absent').map(k => ' ' + mkTag(k)).join('')}</span>`).join('') : esc(empty); };
+function fetchLateOf(id){
+  if (S.lateFetch[id]) return;
+  S.lateFetch[id] = true;
+  API.lateOfStudent(id).then(rows => {
+    S.lateOf[id] = rows.flatMap(x => x.late.filter(e => e.id === id).map(e => ({day:x.day, cls:x.cls, by:e.by || x.updatedBy, at:e.at || x.updatedAt})));
+    bump();
+  }).catch(() => { S.lateFetch[id] = false; });
+}
 // أسماء الغائبين تحت بعض: سطر لكل اسم
 const nameLines = (list, empty) => list.length ? list.map(a => `<span class="nl">${esc(a.name)}</span>`).join('') : esc(empty);
 const rosterOf = cls => M().students.filter(s => s.cls === cls);

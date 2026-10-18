@@ -110,6 +110,16 @@ function todayCard(){
     `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ولا مخالفة ${esc(dl)}.</p>`}</div>`;
 }
 
+/* التأخير الصباحي في رئيسية المشرف: خانة منفصلة عن الغياب، يُحفظ في سجل الطالب ولا يُرسل لأحد */
+function lateCard(){
+  const cl = myClasses(), t = today();
+  if (myRole() !== 'supervisor' || !cl || isWeekend(t)) return '';
+  const n = cl.reduce((k, c) => k + lateIdsOf(t, c).size, 0);
+  return `<div class="sec-h"><h2>التأخير الصباحي</h2><span class="meta">${esc(dayLabel(t))}</span></div>
+    <div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${n ? `سُجّل اليوم ${n} متأخر` : 'لم يُسجَّل تأخير اليوم'}</div>
+      <div class="t2 wrap">يُحفظ في سجل الطالب، ولا يُرسل لأحد.</div></div><button class="btn sm ${n ? 'ghost' : 'primary'}" data-act="late-open">تسجيل التأخير</button></div></div>`;
+}
+
 /* مخالفات الزي والشعر في رئيسية المشرف العام: عدد اليوم، وزر التسجيل */
 function violCard(){
   const t = today(), head = `<div class="sec-h"><h2>مخالفات الزي والشعر</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
@@ -154,8 +164,8 @@ function absenceToday(){
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
   return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span>` : ''}<button class="link" data-act="open-absence" data-day="${t}">${sent.length ? 'التفاصيل والطباعة' : 'الأيام السابقة'}</button></div>
     <div class="list">${sent.length ? sent.map(x => `<button class="row" data-act="open-absence" data-day="${esc(x.day)}">
-        <span class="main"><span class="t1 wrap">${esc([x.cls, x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب', lateCount([x]) ? lateCount([x]) + ' متأخر' : ''].filter(Boolean).join(' · '))}</span>
-        <span class="t2 wrap">${peopleLines(x, 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
+        <span class="main"><span class="t1">${esc(x.cls)} · ${x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب'}</span>
+        <span class="t2 wrap">${nameLines(x.absent, 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
       : '<p class="calm">لم يصل غياب اليوم بعد. يصلك هنا بعد أن يعتمده المشرفون.</p>'}</div>
     ${sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : ''}`;
 }
@@ -208,6 +218,7 @@ const VIEWS = {
         <div id="h-banner" class="stack"></div>
         <section class="sec" id="h-today" hidden></section>
         <section class="sec" id="h-abs" hidden></section>
+        <section class="sec" id="h-late" hidden></section>
         <section class="sec" id="h-attn"></section>
         <section class="sec" id="h-week"></section>
         <section class="sec" id="h-top"></section>
@@ -226,6 +237,8 @@ const VIEWS = {
       ht.innerHTML = td; ht.hidden = !td;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : canViol() ? violCard() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
+      const hl = $('#h-late', el), lc = lateCard();
+      hl.innerHTML = lc; hl.hidden = !lc;
       $('#h-attn', el).innerHTML = attention();
 
       const ws = weekStart(), wk = scope.filter(a => (a.date||'') >= ws);
@@ -374,8 +387,20 @@ const VIEWS = {
       const since = addDays(today(), -30), dn = {absent:0, late:0}; VIOL_KEYS.forEach(k => { dn[k] = 0; });
       absList().forEach(x => { if (x.status !== 'sent' || x.day < since) return;
         if (x.absent.some(a => a.id === id)) dn.absent++;
-        if (marksOf(x, 'late').some(a => a.id === id)) dn.late++; });
+      });
+      const lates = lateEntries(id); fetchLateOf(id);
+      dn.late = lates.filter(l => l.day >= since).length;
       violList().forEach(x => { if (x.day < since) return; VIOL_KEYS.forEach(k => { if (marksOf(x, k).some(a => a.id === id)) dn[k]++; }); });
+      // سجل الطالب: الإجراءات، والتأخير الصباحي بتاريخه ومن سجّله، الأحدث أولاً
+      const items = acts.map(a => ({t:a.createdAt || 0, html:`<li class="ty-${a.type}"><button class="card" data-act="open-action" data-id="${esc(a.id)}">
+              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
+              <span class="what">${esc(a.violation || '—')}</span>
+              <span class="meta">سجّله ${esc(personName(a.createdBy))}${a.type==='summon' && a.summonDate ? ' · الموعد ' + esc(dayLabel(a.summonDate)) : ''}${a.type==='suspend' && a.suspendFrom ? ' · ' + esc(daysTxt(a.suspendDays||1)) + '، يبدأ ' + esc(dayLabel(a.suspendFrom)) : ''}</span>
+            </button></li>`}))
+        .concat(lates.map(l => ({t:l.at || Date.parse(l.day + 'T07:00:00+03:00'), html:`<li class="ty-late"><div class="card">
+              <span class="top"><span class="tchip ty-late">تأخير صباحي</span><span class="grow"></span><span class="day">${esc(dayLabel(l.day))}</span></span>
+              <span class="meta">سجّله ${esc(personName(l.by))}${l.at ? ' · ' + esc(fmtTime(l.at)) : ''} · ${esc(l.cls)}</span></div></li>`})))
+        .sort((x, y) => y.t - x.t);
       const daily = [dn.absent ? 'غياب ' + dn.absent : '', dn.late ? 'تأخير ' + dn.late : ''].concat(VIOL_KEYS.map(k => dn[k] ? VIOLS[k].g + ' ' + dn[k] : '')).filter(Boolean).join(' · ');
       root.innerHTML = back + `
         <section class="phead"><span class="avatar lg">${esc(initial(name))}</span><div><h1>${esc(name)}</h1><div class="meta">${esc(cls ? 'الفصل ' + cls : 'بدون فصل')}${s ? '' : ' · حُذف من القائمة'}</div></div></section>
@@ -390,12 +415,8 @@ const VIEWS = {
         ${daily ? `<p class="meta" id="p-daily">الغياب اليومي، آخر 30 يوماً: ${esc(daily)}</p>` : ''}
         ${recent >= 3 ? `<div class="banner warn">${icon('alert')}<div>عدد الإجراءات على هذا الطالب خلال آخر 30 يوماً: ${recent}.</div></div>` : ''}
         ${canRecord() ? `<button class="btn primary block" data-act="record" data-student="${esc(id)}">${icon('plus','sm')}تسجيل إجراء لهذا الطالب</button>` : ''}
-        <section class="sec"><div class="sec-h"><h2>سجل الطالب</h2>${acts.length ? `<span class="count num">${acts.length}</span>` : ''}</div>
-          ${acts.length ? `<ol class="tl">${acts.map(a => `<li class="ty-${a.type}"><button class="card" data-act="open-action" data-id="${esc(a.id)}">
-              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
-              <span class="what">${esc(a.violation || '—')}</span>
-              <span class="meta">سجّله ${esc(personName(a.createdBy))}${a.type==='summon' && a.summonDate ? ' · الموعد ' + esc(dayLabel(a.summonDate)) : ''}${a.type==='suspend' && a.suspendFrom ? ' · ' + esc(daysTxt(a.suspendDays||1)) + '، يبدأ ' + esc(dayLabel(a.suspendFrom)) : ''}</span>
-            </button></li>`).join('')}</ol>` : `<div class="list"><p class="calm">لا توجد إجراءات مسجلة على هذا الطالب.</p></div>`}
+        <section class="sec"><div class="sec-h"><h2>سجل الطالب</h2>${items.length ? `<span class="count num">${items.length}</span>` : ''}</div>
+          ${items.length ? `<ol class="tl">${items.map(x => x.html).join('')}</ol>` : `<div class="list"><p class="calm">لا توجد إجراءات مسجلة على هذا الطالب.</p></div>`}
         </section>
         ${s && isManager() ? `<div class="btns"><button class="btn ghost" data-act="stu-edit" data-id="${esc(id)}">${icon('edit','sm')}تعديل بيانات الطالب</button></div>` : ''}`;
     }
