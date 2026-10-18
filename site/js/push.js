@@ -109,7 +109,7 @@ function pushClearShown(){
 
 /* ===== فتح ما يخص الإشعار ===== */
 // عند الضغط على الإشعار: يُفتح الموقع برابط فيه ?open=…، أو تصل رسالة من عامل الخدمة إذا كان الموقع مفتوحاً
-const OPEN_RE = /^(a:[0-9a-f-]{36}|abs:\d{4}-\d{2}-\d{2}|inbox)$/i;
+const OPEN_RE = /^(a:[0-9a-f-]{36}|abs:\d{4}-\d{2}-\d{2}|viol:\d{4}-\d{2}-\d{2}|inbox)$/i;
 S.openNext = (() => {
   try {
     const u = new URL(location.href), t = u.searchParams.get('open');
@@ -124,6 +124,7 @@ function openTarget(t){
   if (S.gate !== 'in') { S.openNext = t; return; }
   if (t === 'inbox') return go('inbox');
   if (t.startsWith('abs:')) return openAbsenceView(t.slice(4));
+  if (t.startsWith('viol:')) return openViolView(t.slice(5));
   const id = t.slice(2);
   if (S.actions[id]) return openAction(id);
   refreshAction(id).then(() => { if (S.actions[id] && S.gate === 'in') openAction(id); });

@@ -99,10 +99,24 @@ function todayCard(){
   if (sums.length) html += grp('مطلوب حضور ولي الأمر ' + dl, sums.length, null, 'warn') +
     sums.map(a => quickRow(a, a.summonDate === t ? came : null,
       (a.summonDate === d ? '' : shortDay(a.summonDate) + ' ') + 'الساعة ' + (fmtHM(a.summonTime) || '—') + ' · ' + stuCls(a) + (a.violation ? ' · ' + a.violation : ''))).join('');
+  const mine = myClasses(), vx = d === t ? violList().filter(x => x.day === t && violCountOf(x) > 0 && (!mine || mine.includes(x.cls))).sort((a, b) => clsCmp(a.cls, b.cls)) : [];
+  const vp = vx.flatMap(x => violPeople(x).map(p => Object.assign({cls:x.cls}, p)));
+  if (vp.length) html += `<div class="grp info">مخالفات الزي والشعر اليوم <span class="num">· ${vp.length}</span><button class="link" data-act="open-viol" data-day="${t}">التفاصيل</button></div>` +
+    vp.map(p => `<button class="row" data-act="open-student" data-id="${esc(p.id)}"><span class="main"><span class="t1 wrap">${esc(p.name)}</span>
+      <span class="t2 wrap">${esc(p.cls)} <span class="abs-tags inl">${p.kinds.map(mkTag).join('')}</span></span></span></button>`).join('');
   if (late.length) html += grp('فات موعدها ولم يُسجَّل حضور ولي الأمر', late.length, late.length > 5 && 'summon', 'bad') +
     late.slice(-5).reverse().map(a => quickRow(a, came, 'كان الموعد ' + dayLabel(a.summonDate) + ' · ' + stuCls(a))).join('');
   return `<div class="sec-h"><h2>${d === t ? 'اليوم' : 'يوم الدوام القادم'}</h2><span class="meta">${esc(fmtDay(d))}</span></div>` +
-    `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ${esc(dl)}.</p>`}</div>`;
+    `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ولا مخالفة ${esc(dl)}.</p>`}</div>`;
+}
+
+/* مخالفات الزي والشعر في رئيسية المشرف العام: عدد اليوم، وزر التسجيل */
+function violCard(){
+  const t = today(), head = `<div class="sec-h"><h2>مخالفات الزي والشعر</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
+  if (isWeekend(t)) return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">اليوم عطلة نهاية الأسبوع</div></div></div></div>`;
+  const xs = violList().filter(x => x.day === t && violCountOf(x) > 0), n = xs.reduce((k, x) => k + violCountOf(x), 0);
+  return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${n ? `سُجّل اليوم ${esc(violTxt(n))} في ${xs.length} ${xs.length === 1 ? 'فصل' : 'فصول'}` : 'لم تُسجَّل مخالفة اليوم'}</div>
+    <div class="t2 wrap">يصل الإشعار لمشرف جناح الطالب فقط.</div></div><button class="btn sm primary" data-act="viol-open">تسجيل المخالفات</button></div></div>`;
 }
 
 /* الغياب اليومي في الرئيسية: بطاقة المشرف، وملخص شؤون الطلبة */
@@ -140,7 +154,7 @@ function absenceToday(){
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
   return `<div class="sec-h"><h2>الغياب اليوم</h2>${sent.length ? `<span class="count num">${absCount(sent)}</span>` : ''}<button class="link" data-act="open-absence" data-day="${t}">${sent.length ? 'التفاصيل والطباعة' : 'الأيام السابقة'}</button></div>
     <div class="list">${sent.length ? sent.map(x => `<button class="row" data-act="open-absence" data-day="${esc(x.day)}">
-        <span class="main"><span class="t1 wrap">${esc([x.cls, x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب', lateCount([x]) ? lateCount([x]) + ' متأخر' : '', violCount([x]) ? violTxt(violCount([x])) : ''].filter(Boolean).join(' · '))}</span>
+        <span class="main"><span class="t1 wrap">${esc([x.cls, x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب', lateCount([x]) ? lateCount([x]) + ' متأخر' : ''].filter(Boolean).join(' · '))}</span>
         <span class="t2 wrap">${peopleLines(x, 'حضر الجميع')}</span></span><span class="when">${esc(fmtTime(x.sentAt))}</span></button>`).join('')
       : '<p class="calm">لم يصل غياب اليوم بعد. يصلك هنا بعد أن يعتمده المشرفون.</p>'}</div>
     ${sent.length && missing.length ? `<p class="meta">لم يصل بعد: ${esc(missing.join('، '))}</p>` : ''}`;
@@ -210,7 +224,7 @@ const VIEWS = {
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
       const ht = $('#h-today', el), td = todayCard();
       ht.innerHTML = td; ht.hidden = !td;
-      const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : '';
+      const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : canViol() ? violCard() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
       $('#h-attn', el).innerHTML = attention();
 
@@ -357,11 +371,12 @@ const VIEWS = {
       // فصل معتمد لم يبدأ بعد: الأقرب
       const upSus = sus ? null : acts.filter(a => a.type === 'suspend' && a.status === 'approved' && (a.suspendFrom || '') > today()).sort((a, b) => a.suspendFrom.localeCompare(b.suspendFrom))[0];
       const phone = s && s.phone;
-      const dn = {absent:0}; MARK_KEYS.forEach(k => { dn[k] = 0; });
-      absList().forEach(x => { if (x.status !== 'sent' || x.day < addDays(today(), -30)) return;
+      const since = addDays(today(), -30), dn = {absent:0, late:0}; VIOL_KEYS.forEach(k => { dn[k] = 0; });
+      absList().forEach(x => { if (x.status !== 'sent' || x.day < since) return;
         if (x.absent.some(a => a.id === id)) dn.absent++;
-        MARK_KEYS.forEach(k => { if (marksOf(x, k).some(a => a.id === id)) dn[k]++; }); });
-      const daily = [dn.absent ? 'غياب ' + dn.absent : ''].concat(MARK_KEYS.map(k => dn[k] ? (k === 'late' ? 'تأخير ' : MARKS[k].g + ' ') + dn[k] : '')).filter(Boolean).join(' · ');
+        if (marksOf(x, 'late').some(a => a.id === id)) dn.late++; });
+      violList().forEach(x => { if (x.day < since) return; VIOL_KEYS.forEach(k => { if (marksOf(x, k).some(a => a.id === id)) dn[k]++; }); });
+      const daily = [dn.absent ? 'غياب ' + dn.absent : '', dn.late ? 'تأخير ' + dn.late : ''].concat(VIOL_KEYS.map(k => dn[k] ? VIOLS[k].g + ' ' + dn[k] : '')).filter(Boolean).join(' · ');
       root.innerHTML = back + `
         <section class="phead"><span class="avatar lg">${esc(initial(name))}</span><div><h1>${esc(name)}</h1><div class="meta">${esc(cls ? 'الفصل ' + cls : 'بدون فصل')}${s ? '' : ' · حُذف من القائمة'}</div></div></section>
         ${sus ? timeBanner(sus) : upSus ? timeBanner(upSus) : ''}
@@ -412,6 +427,8 @@ const VIEWS = {
       }
       $('#in-list', el).innerHTML = `<div class="list">${ev.map(x => {
         const t = evText(x), un = (x.e.t||0) > S.seenMark;
+        if (x.viol) return `<button class="row${un ? ' unread' : ''}" data-act="open-viol" data-day="${esc(x.viol.day)}"><span class="tico ty-viol">${icon('alert')}</span>
+          <span class="main"><span class="t1 wrap">${esc(t.t1)}</span><span class="t2 wrap">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
         if (x.abs) return `<button class="row${un ? ' unread' : ''}" data-act="open-absence" data-day="${esc(x.abs.day)}"><span class="tico ty-abs">${icon('users')}</span>
           <span class="main"><span class="t1 wrap">${esc(t.t1)}</span><span class="t2 wrap">${esc(t.t2)}</span></span><span class="when">${esc(rel(x.e.t))}</span></button>`;
         return `<button class="row${un ? ' unread' : ''}" data-act="open-action" data-id="${esc(x.a.id)}">${tico(x.a.type)}

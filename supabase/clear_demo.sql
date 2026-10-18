@@ -8,6 +8,7 @@ declare
   v_actions int;
   v_students int;
   v_absence int;
+  v_viol int;
 begin
   -- أوراق الغياب التجريبية: فيها طالب تجريبي (غائباً أو متأخراً أو عليه مخالفة)، أو لفصل كل طلابه تجريبيون
   with d as (
@@ -19,6 +20,15 @@ begin
             and not exists (select 1 from public.students s where s.cls = a.cls and s.id::text not like 'dd000000-%'))
     returning 1
   ) select count(*) into v_absence from d;
+  -- مخالفات الزي والشعر على طلاب تجريبيين، أو لفصل كل طلابه تجريبيون
+  with d as (
+    delete from public.violation_sheets v
+     where exists (select 1 from jsonb_each(v.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
+                    where e->>'id' like 'dd000000-%')
+        or (exists (select 1 from public.students s where s.cls = v.cls and s.id::text like 'dd000000-%')
+            and not exists (select 1 from public.students s where s.cls = v.cls and s.id::text not like 'dd000000-%'))
+    returning 1
+  ) select count(*) into v_viol from d;
   -- القيود أولاً، قبل أن يصير student_id فارغاً بحذف الطالب
   with d as (
     delete from public.actions
@@ -33,8 +43,8 @@ begin
      and (row_data->>'id' like 'dd000000-%' or row_data->>'student_id' like 'dd000000-%');
   if v_actions + v_students > 0 then
     insert into public.deleted_log (table_name, row_data, deleted_by)
-      values ('demo', jsonb_build_object('actions', v_actions, 'students', v_students, 'absence', v_absence),
+      values ('demo', jsonb_build_object('actions', v_actions, 'students', v_students, 'absence', v_absence, 'violations', v_viol),
               (select id from public.staff where is_admin and active order by created_at limit 1));
   end if;
-  raise notice 'حُذف من البيانات التجريبية: % إجراء و% طالب و% ورقة غياب', v_actions, v_students, v_absence;
+  raise notice 'حُذف من البيانات التجريبية: % إجراء و% طالب و% ورقة غياب و% ورقة مخالفات', v_actions, v_students, v_absence, v_viol;
 end $clear$;

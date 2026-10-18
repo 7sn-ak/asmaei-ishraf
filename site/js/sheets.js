@@ -89,6 +89,8 @@ function refreshSheet(){
   const body = $('#sheetBody'), ae = document.activeElement;
   if (body && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (S.sheet.kind === 'absview') return renderAbsView();
+  if (S.sheet.kind === 'violview') return renderViolView();
+  if (S.sheet.kind === 'viol') return renderViolSheet();
   if (S.sheet.kind === 'action') renderActionBody();
 }
 
@@ -550,8 +552,8 @@ function absBlock(c){
   const x = absSheet(ABS.day, c), set = ABS.picks[c], mk = ABS.marks[c], roster = rosterOf(c), open = ABS.open === c, sent = x && x.status === 'sent';
   const st = ABS.saving[c] ? 'يُحفظ…' : ABS.pending[c] ? 'لم يُحفظ بعد' : sent ? 'أُرسل' : x ? 'محفوظ' : 'لم يُسجَّل';
   const tone = sent ? 'ok' : (x && !ABS.pending[c]) ? 'info' : 'mute';
-  const late = mk.late.size, viol = VIOL_KEYS.reduce((n, k) => n + mk[k].size, 0);
-  const count = [set.size ? `${set.size} غائب من ${roster.length}` : x ? 'لا غياب' : `${roster.length} طالب`, late ? late + ' متأخر' : '', viol ? violTxt(viol) : ''].filter(Boolean).join(' · ');
+  const late = mk.late.size;
+  const count = [set.size ? `${set.size} غائب من ${roster.length}` : x ? 'لا غياب' : `${roster.length} طالب`, late ? late + ' متأخر' : ''].filter(Boolean).join(' · ');
   const m = ABS.mode, has = (id, k) => k === 'absent' ? set.has(id) : mk[k].has(id);
   let inner = '';
   if (open) inner = sent ? `<p class="abs-names">${peopleLines(x, 'لا غياب')}</p>`
@@ -573,8 +575,8 @@ function renderAbsence(){
   const drafts = xs.filter(x => x.status === 'draft'), sent = xs.filter(x => x.status === 'sent');
   const missing = ABS.classes.filter(c => !absSheet(ABS.day, c) && !ABS.pending[c]);
   const n = ABS.classes.reduce((k, c) => k + ABS.picks[c].size, 0), waiting = Object.keys(ABS.pending).length + Object.keys(ABS.saving).length;
-  const nl = ABS.classes.reduce((k, c) => k + ABS.marks[c].late.size, 0), nv = ABS.classes.reduce((k, c) => k + VIOL_KEYS.reduce((j, m) => j + ABS.marks[c][m].size, 0), 0);
-  if (drafts.length || waiting) foot.innerHTML = `<p class="meta">المجموع: ${esc(countsTxt(n, nl, nv))}${missing.length ? ' · لم يُسجَّل بعد: ' + esc(missing.join('، ')) : ''}</p>` +
+  const nl = ABS.classes.reduce((k, c) => k + ABS.marks[c].late.size, 0);
+  if (drafts.length || waiting) foot.innerHTML = `<p class="meta">المجموع: ${esc(countsTxt(n, nl))}${missing.length ? ' · لم يُسجَّل بعد: ' + esc(missing.join('، ')) : ''}</p>` +
     `<button class="btn primary block" data-act="abs-send">اعتماد وإرسال لشؤون الطلبة</button>`;
   else if (sent.length) foot.innerHTML = `<p class="meta">أُرسل لشؤون الطلبة ${esc(fmtTime(Math.max.apply(null, sent.map(x => x.sentAt))))}${missing.length ? ' · لم يُسجَّل: ' + esc(missing.join('، ')) : ''}.</p>
     <button class="btn ghost block" data-act="abs-unsend" data-confirm="اضغط مرة أخرى لإلغاء الإرسال">إلغاء الإرسال للتعديل</button>`;
@@ -586,7 +588,7 @@ function absModes(){
   return `<div class="abs-modes" role="group" aria-label="ما تسجله">${[['absent', 'الغياب']].concat(MARK_KEYS.map(k => [k, MARKS[k].mode])).map(([k, l]) => { const n = sum(k);
     return `<button type="button" class="m-${k}" data-act="abs-mode" data-m="${k}" aria-pressed="${ABS.mode === k}">${esc(l)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>`;
 }
-// الضغط على الطالب: الغياب يمسح ما سُجّل عليه، والتأخير ينقله من الغياب (وصل متأخراً)، والمخالفة للحاضر فقط
+// الضغط على الطالب: الغياب يمسح ما سُجّل عليه، والتأخير ينقله من الغياب (وصل متأخراً)
 function absToggle(c, id){
   const x = absSheet(ABS.day, c);
   if (x && x.status === 'sent') return toast(ERR.already_sent, {bad:true});
@@ -663,7 +665,7 @@ function renderAbsView(){
       ${sent.length ? `<span class="count num">${esc(dailyTxt(sent))}</span>` : ''}${day !== t ? '<button class="link" data-act="abs-day" data-d="0">اليوم</button>' : ''}</div>` +
     (S.sheet.loading ? '<p class="loading">جارٍ التحميل…</p>'
       : sent.length ? sent.map(x => `<section class="abs-cls open"><div class="abs-h"><b>${esc(x.cls)}</b>
-          <span class="meta">${esc([x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب', lateCount([x]) ? lateCount([x]) + ' متأخر' : '', violCount([x]) ? violTxt(violCount([x])) : ''].filter(Boolean).join(' · '))}</span><span class="grow"></span>
+          <span class="meta">${esc([x.absent.length ? x.absent.length + ' غائب من ' + x.total : 'لا غياب', lateCount([x]) ? lateCount([x]) + ' متأخر' : ''].filter(Boolean).join(' · '))}</span><span class="grow"></span>
           <span class="meta">${esc(personName(x.sentBy))} · ${esc(fmtTime(x.sentAt))}</span></div>
           ${sheetPeople(x).map(a => { const st = S.students[a.id], ph = st && st.phone, tags = a.kinds.filter(k => k !== 'absent');
             return `<div class="row"><button class="main" data-act="open-student" data-id="${esc(a.id)}"><span class="t1 wrap">${esc(a.name)}</span>${tags.length ? `<span class="abs-tags">${tags.map(mkTag).join('')}</span>` : ''}</button>
@@ -673,11 +675,95 @@ function renderAbsView(){
     (sent.length && missing.length ? `<p class="meta">لم يصل غياب: ${esc(missing.join('، '))}</p>` : '');
   const pb = $('#abs-print'); if (pb) pb.disabled = !sent.length || S.sheet.loading;
 }
+/* --- مخالفات الزي والشعر: يسجلها المشرف العام، ويصل إشعارها لمشرف جناح الفصل فقط --- */
+let VS = null;
+function openViolations(){
+  if (!canViol()) return toast('مخالفات الزي والشعر يسجلها المشرف العام.', {bad:true});
+  const day = today();
+  if (isWeekend(day)) return toast('الجمعة والسبت عطلة.');
+  if (!VS || VS.day !== day) VS = {day, cls:null, mode:'uniform', picks:{}, timers:{}, pending:{}, saving:{}};
+  openSheet('viol', 'مخالفات الزي والشعر', '', '<div id="vs-foot" class="stack-s"></div>', {day});
+  renderViolSheet();
+}
+// ما اختاره المشرف العام في كل فصل (من الخادم أول مرة)
+function vsPicks(c){
+  if (!VS.picks[c]) { const x = violSheet(VS.day, c); VS.picks[c] = {}; VIOL_KEYS.forEach(k => { VS.picks[c][k] = new Set(marksOf(x, k).map(a => a.id)); }); }
+  return VS.picks[c];
+}
+const vsCount = c => VS.picks[c] ? VIOL_KEYS.reduce((n, k) => n + VS.picks[c][k].size, 0) : violCountOf(violSheet(VS.day, c));
+const vsKind = (c, k) => VS.picks[c] ? VS.picks[c][k].size : marksOf(violSheet(VS.day, c), k).length;
+function renderViolSheet(){
+  const body = $('#sheetBody'), foot = $('#vs-foot');
+  if (!VS || !S.sheet || S.sheet.kind !== 'viol' || !body) return;
+  const sc = body.scrollTop, classes = M().classes;
+  const modes = `<div class="abs-modes" role="group" aria-label="المخالفة">${VIOL_KEYS.map(k => { const n = classes.reduce((s, c) => s + vsKind(c, k), 0);
+    return `<button type="button" class="m-${k}" data-act="vs-mode" data-m="${k}" aria-pressed="${VS.mode === k}">${esc(VIOLS[k].l)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>`;
+  const chips = classes.length ? `<div class="chips multi" role="group" aria-label="الفصل">${classes.map(c => { const n = vsCount(c);
+    return `<button type="button" class="chip" data-act="vs-cls" data-cls="${esc(c)}" aria-pressed="${VS.cls === c}">${esc(c)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>` : '<p class="calm">لا توجد فصول بعد. أضف الطلاب أولاً.</p>';
+  let inner = '';
+  if (VS.cls) {
+    const c = VS.cls, roster = rosterOf(c), p = vsPicks(c), w = wingOfClass(c), sups = w ? supsOf(w.id).filter(s => s.active) : [];
+    const ab = new Set(((absSheet(VS.day, c) || {}).absent || []).map(a => a.id));
+    const who = sups.length ? `يصل الإشعار لمشرف ${w.name}: ${sups.map(s => s.name).join('، ')}.`
+      : w ? `لا يوجد مشرف في ${w.name}، فلا يصل إشعار لأحد.` : `الفصل ${c} ليس في أي جناح، فلا يصل إشعار لأحد.`;
+    inner = `<section class="abs-cls open" id="vs-roster"><div class="abs-h"><b>${esc(c)}</b><span class="meta">${esc(violSummary({marks:Object.fromEntries(VIOL_KEYS.map(k => [k, Array.from(p[k])]))}) || roster.length + ' طالب')}</span></div>
+      <p class="note vs-who">${esc(who)}</p>` +
+      (roster.length ? `<div class="abs-list">${roster.map(s => `<button class="abs-stu" data-act="vs-stu" data-cls="${esc(c)}" data-id="${esc(s.id)}" data-m="${VS.mode}" aria-pressed="${p[VS.mode].has(s.id)}">
+        <span>${esc(s.name)}</span><span class="abs-tags">${ab.has(s.id) ? mkTag('absent') : ''}${VIOL_KEYS.filter(k => p[k].has(s.id)).map(mkTag).join('')}</span></button>`).join('')}</div>`
+        : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>') + '</section>';
+  } else if (classes.length) inner = '<p class="calm">اختر الفصل.</p>';
+  body.innerHTML = `<p class="meta">${esc(fmtDay(VS.day))}. اختر المخالفة والفصل، ثم اضغط اسم الطالب. يُحفظ كل تغيير تلقائياً، ويصل إشعار لمشرف جناح الفصل فقط.</p>` + modes + chips + inner;
+  body.scrollTop = sc;
+  const tot = classes.reduce((n, c) => n + vsCount(c), 0), ncls = classes.filter(c => vsCount(c) > 0).length;
+  const busy = Object.keys(VS.pending).length + Object.keys(VS.saving).length;
+  if (foot) foot.innerHTML = `<p class="meta">${tot ? `اليوم: ${violTxt(tot)} في ${ncls} ${ncls === 1 ? 'فصل' : 'فصول'}` : 'لم تُسجَّل مخالفة اليوم.'}${busy ? ' · يُحفظ…' : ''}</p>`;
+}
+function vsToggle(c, id){
+  if (!VS) return;
+  const p = vsPicks(c), m = VS.mode;
+  if (((absSheet(VS.day, c) || {}).absent || []).some(a => a.id === id)) return toast(ERR.absent_marked, {bad:true});
+  if (p[m].has(id)) p[m].delete(id); else p[m].add(id);
+  VS.pending[c] = true; clearTimeout(VS.timers[c]);
+  VS.timers[c] = setTimeout(() => saveViolClass(c), 700);
+  renderViolSheet();
+}
+async function refreshViolations(day){
+  try { (await API.violationsFor(day)).forEach(x => { S.violations[x.id] = x; }); S.ver++; schedule(); } catch(e) {}
+}
+async function saveViolClass(c){
+  const st = VS; if (!st || !st.pending[c]) return true;
+  clearTimeout(st.timers[c]); delete st.pending[c]; st.saving[c] = true; renderViolSheet();
+  const marks = {}; VIOL_KEYS.forEach(k => { marks[k] = Array.from(st.picks[c][k]); });
+  const ok = await save(() => API.saveViolations(st.day, c, marks));
+  delete st.saving[c];
+  // بلا اتصال يُعاد الحفظ مع التغيير التالي، وإن رفضه الخادم يرجع الفصل إلى ما حُفظ
+  if (!ok) { if (navigator.onLine === false) st.pending[c] = true; else delete st.picks[c]; }
+  await refreshViolations(st.day); renderViolSheet();
+  return !!ok;
+}
+// مخالفات يوم للاطلاع: مشرف الجناح يرى فصول جناحه، والإدارة كل الفصول
+function openViolView(day){
+  day = /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? day : today();
+  openSheet('violview', 'مخالفات الزي والشعر', '', '', {day});
+  renderViolView();
+}
+function renderViolView(){
+  const body = $('#sheetBody'); if (!body || !S.sheet || S.sheet.kind !== 'violview') return;
+  const day = S.sheet.day, mine = myClasses();
+  const xs = violList().filter(x => x.day === day && violCountOf(x) > 0 && (!mine || mine.includes(x.cls))).sort((a, b) => clsCmp(a.cls, b.cls));
+  const n = xs.reduce((k, x) => k + violCountOf(x), 0);
+  body.innerHTML = `<div class="sec-h"><h2>${esc(fmtDay(day, {weekday:'long', day:'numeric', month:'long'}))}</h2>${n ? `<span class="count num">${esc(violTxt(n))}</span>` : ''}</div>` +
+    (xs.length ? xs.map(x => `<section class="abs-cls open"><div class="abs-h"><b>${esc(x.cls)}</b><span class="meta">${esc(violSummary(x))}</span><span class="grow"></span>
+        <span class="meta">${esc(personName(x.updatedBy))} · ${esc(fmtTime(x.updatedAt))}</span></div>
+        ${violPeople(x).map(p => `<div class="row"><button class="main" data-act="open-student" data-id="${esc(p.id)}"><span class="t1 wrap">${esc(p.name)}</span><span class="abs-tags">${p.kinds.map(mkTag).join('')}</span></button></div>`).join('')}</section>`).join('')
+      : `<p class="calm">لا توجد مخالفات زي أو شعر${mine ? ' في جناحك' : ''} في هذا اليوم.</p>`);
+}
+
 // ورقة الطباعة: ملخص اليوم، وجدول الفصول مع أسماء الغائبين، وتوقيع شؤون الطلبة
 function absPrintHtml(day, sent){
   const C = window.APP_CONFIG || {};
-  const total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs, late = lateCount(sent), viol = violCount(sent);
-  const marked = sent.flatMap(x => sheetPeople(x).filter(p => !p.kinds.includes('absent')).map(p => ({cls:x.cls, name:p.name, what:p.kinds.map(k => MARKS[k].g).join('، ')})));
+  const total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs, late = lateCount(sent);
+  const lateRows = sent.flatMap(x => marksOf(x, 'late').map(p => ({cls:x.cls, name:p.name})));
   const missing = M().classes.filter(c => !sent.some(x => x.cls === c));
   const rows = sent.map(x => `<tr><td>${esc(x.cls)}</td><td>${x.total}</td><td>${x.absent.length}</td><td>${x.total - x.absent.length}</td><td>${pctOf(x.total - x.absent.length, x.total)}</td>
     <td class="names">${x.absent.length ? `<ol>${x.absent.map(a => `<li>${esc(a.name)}</li>`).join('')}</ol>` : 'لا غياب'}</td><td>${esc(personName(x.sentBy))}</td></tr>`).join('');
@@ -687,14 +773,14 @@ function absPrintHtml(day, sent){
       <div class="pr-title"><b>إحصائية الغياب اليومي</b><span>${esc(fmtDay(day, {weekday:'long', day:'numeric', month:'long', year:'numeric'}))}</span></div></header>
     <section class="pr-sum"><div><span>عدد الطلاب</span><b>${total}</b></div><div><span>الغياب</span><b>${abs}</b></div>
       <div><span>الحضور</span><b>${pres}</b></div><div><span>نسبة الحضور</span><b>${pctOf(pres, total)}</b></div>
-      <div><span>التأخير الصباحي</span><b>${late}</b></div><div><span>المخالفات</span><b>${viol}</b></div></section>
+      <div><span>التأخير الصباحي</span><b>${late}</b></div></section>
     <table class="pr-t"><thead><tr><th>الفصل</th><th>عدد الطلاب</th><th>الغياب</th><th>الحضور</th><th>نسبة الحضور</th><th>أسماء الغائبين</th><th>المشرف</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><th>المجموع</th><th>${total}</th><th>${abs}</th><th>${pres}</th><th>${pctOf(pres, total)}</th><th colspan="2">${sent.length} ${sent.length === 1 ? 'فصل' : sent.length <= 10 ? 'فصول' : 'فصلاً'}</th></tr></tfoot></table>
     ${missing.length ? `<p class="pr-miss">لم يصل غياب: ${esc(missing.join('، '))}</p>` : ''}
-    ${marked.length ? `<h3 class="pr-h3">التأخير الصباحي والمخالفات</h3>
-      <table class="pr-t"><thead><tr><th>الفصل</th><th>الطالب</th><th>ما سُجّل عليه</th></tr></thead>
-      <tbody>${marked.map(r => `<tr><td>${esc(r.cls)}</td><td class="names">${esc(r.name)}</td><td>${esc(r.what)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${lateRows.length ? `<h3 class="pr-h3">التأخير الصباحي</h3>
+      <table class="pr-t pr-late"><thead><tr><th>الفصل</th><th>الطالب</th></tr></thead>
+      <tbody>${lateRows.map(r => `<tr><td>${esc(r.cls)}</td><td class="names">${esc(r.name)}</td></tr>`).join('')}</tbody></table>` : ''}
     <footer class="pr-f"><div>مسؤول شؤون الطلبة<div class="line"></div></div><div>التوقيع<div class="line"></div></div>
       <div class="pr-printed">طُبعت من سجل الإشراف في ${esc(fmtDay(today(), {day:'numeric', month:'long', year:'numeric'}))} ${esc(fmtTime(Date.now()))} · ${esc(personName(S.uid))}</div></footer>
   </div>`;
@@ -754,6 +840,11 @@ document.addEventListener('click', e => {
     case 'abs-open': openAbsence(); break;
     case 'abs-cls': ABS.open = ABS.open === el.dataset.cls ? null : el.dataset.cls; renderAbsence(); break;
     case 'abs-stu': absToggle(el.dataset.cls, id); break;
+    case 'viol-open': openViolations(); break;
+    case 'open-viol': openViolView(el.dataset.day); break;
+    case 'vs-mode': if (VS && VIOLS[el.dataset.m]) { VS.mode = el.dataset.m; renderViolSheet(); } break;
+    case 'vs-cls': if (VS) { VS.cls = el.dataset.cls; renderViolSheet(); const b = $('#sheetBody'), r = b && $('#vs-roster', b); if (r) b.scrollTop = Math.max(0, r.offsetTop - 120); } break;
+    case 'vs-stu': vsToggle(el.dataset.cls, id); break;
     case 'abs-mode': if (ABS && (MARKS[el.dataset.m] || el.dataset.m === 'absent')) { ABS.mode = el.dataset.m; renderAbsence(); } break;
     case 'abs-none': ABS.picks[el.dataset.cls].clear(); queueAbsSave(el.dataset.cls, true); renderAbsence(); break;
     case 'abs-send': absSend(); break;
@@ -854,7 +945,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sheet) c
 /* ===== التشغيل ===== */
 function teardown(){
   if (S.unsub) { S.unsub(); S.unsub = null; }
-  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.wings = {}; S.prefsDoc = null; S.orphan = {}; ABS = null;
+  S.uid = null; S.loaded = false; S.staff = {}; S.students = {}; S.actions = {}; S.absence = {}; S.violations = {}; S.wings = {}; S.prefsDoc = null; S.orphan = {}; ABS = null; VS = null;
   S.fatal = ''; S.view = 'home'; S.params = {}; S.ver++; PUSH.busy = false;
 }
 async function enter(uid){

@@ -95,7 +95,7 @@ const rel = t => { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s <
 
 /* ===== الحالة ===== */
 const S = {
-  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, wings:{}, prefsDoc:null, orphan:{},
+  authState:'checking', uid:null, staff:{}, students:{}, actions:{}, absence:{}, violations:{}, wings:{}, prefsDoc:null, orphan:{},
   loaded:false, fatal:'', offline:!navigator.onLine, loadAt:Date.now(), ver:0, rtDown:false, hiddenAt:0,
   view:'home', params:{}, gate:null, sheet:null, unsub:null,
   f:{ log:{type:'all', status:'all', period:'week', cls:'all', q:'', limit:120},
@@ -226,7 +226,7 @@ const ERR = {
   too_fast:'انتظر قليلاً ثم جرّب مرة أخرى.',
   not_supervisor:'الأجنحة للمشرفين فقط.',
   weekend:'الجمعة والسبت عطلة، لا يُسجَّل فيهما غياب.',
-  absent_marked:'الطالب مسجّل غائب، فلا يُسجَّل عليه تأخير أو مخالفة.',
+  absent_marked:'الطالب مسجّل غائب اليوم، فلا يُسجَّل عليه تأخير أو مخالفة.',
   bad_marks:'تعذّر حفظ الورقة. أغلق النافذة وافتحها من جديد.',
   name_taken:'يوجد جناح بهذا الاسم.',
   bad_endpoint:'هذا المتصفح يستخدم خدمة إشعارات غير معروفة، فلا تصله الإشعارات والموقع مغلق.',
@@ -272,15 +272,16 @@ function setPrefs(patch){
 async function loadData(){
   const since = new Date(Date.now() - 400 * 864e5).toISOString();
   const d = await API.loadAll(since, addDays(today(), -30));
-  const staff = {}, students = {}, actions = {}, absence = {}, wings = {};
+  const staff = {}, students = {}, actions = {}, absence = {}, violations = {}, wings = {};
   (d.absence || []).forEach(x => { absence[x.id] = x; });
+  (d.violations || []).forEach(x => { violations[x.id] = x; });
   (d.wings || []).forEach(w => { wings[w.id] = w; });
   d.staff.forEach(s => { staff[s.id] = s; });
   d.students.forEach(s => { students[s.id] = s; });
   d.actions.forEach(a => { actions[a.id] = a; });
   d.logs.forEach(l => { const a = actions[l.actionId]; if (a) a.log.push(l); });
   Object.values(actions).forEach(a => a.log.sort((x, y) => x.t - y.t || x.id - y.id));
-  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.wings = wings; S.prefsDoc = d.prefs;
+  S.staff = staff; S.students = students; S.actions = actions; S.absence = absence; S.violations = violations; S.wings = wings; S.prefsDoc = d.prefs;
   S.loaded = true; S.fatal = ''; S.ver++;
 }
 async function reload(){
@@ -328,6 +329,14 @@ const RT = {
     if (row.status === 'sent' && (!prev || prev.status !== 'sent')) absAlert(row);
     bump();
   },
+  violation(ev, row, oldId){
+    if (ev === 'DELETE') { delete S.violations[oldId]; return bump(); }
+    if (!row) return;
+    const prev = S.violations[row.id];
+    S.violations[row.id] = row;
+    violAlert(row, prev);
+    bump();
+  },
   status(st){
     if (st === 'SUBSCRIBED') { if (S.rtDown) { S.rtDown = false; reload(); } }
     else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') S.rtDown = true;
@@ -358,12 +367,15 @@ function events(){
   const out = [];
   for (const a of m.list) for (const e of a.log) if (relevant(a, e)) out.push({a, e});
   if (contactDuty()) out.push.apply(out, absEvents());
+  if (myRole() === 'supervisor') out.push.apply(out, violEvents());
   out.sort((x, y) => (y.e.t || 0) - (x.e.t || 0));
   m.ev = out.slice(0, 100);
   return m.ev;
 }
 const unread = () => { const ls = prefs().lastSeen || 0; return events().filter(x => (x.e.t || 0) > ls).length; };
 function evText(x){
+  if (x.viol) return {t1:`مخالفة الزي والشعر في ${x.viol.cls}: ${violSummary(x.viol)}`,
+    t2:'سجّلها ' + personName(x.e.by) + ' · ' + violPeople(x.viol).map(p => p.name).join('، ')};
   if (x.abs) return {t1:`وصل غياب ${dayLabel(x.abs.day)}: ${dailyTxt(x.abs.sheets)} في ${x.abs.sheets.length} ${x.abs.sheets.length === 1 ? 'فصل' : 'فصول'}`,
     t2:'اعتمده ' + personName(x.e.by) + ' · ' + x.abs.sheets.map(s => s.cls).sort(clsCmp).join('، ')};
   const a = x.a, e = x.e, who = personName(e.by), n = stuName(a);
@@ -398,7 +410,7 @@ function toast(msg, o){
 }
 function alertEv(x){
   const t = evText(x);
-  toast(t.t1, {sub:t.t2, btn:'فتح', ms:7000, onBtn:() => x.abs ? openAbsenceView(x.abs.day) : openAction(x.a.id)});
+  toast(t.t1, {sub:t.t2, btn:'فتح', ms:7000, onBtn:() => x.viol ? openViolView(x.viol.day) : x.abs ? openAbsenceView(x.abs.day) : openAction(x.a.id)});
   try { if (navigator.vibrate) navigator.vibrate([70, 50, 70]); } catch(e) {}
   if (prefs().sound) chime();
 }
@@ -426,22 +438,20 @@ document.addEventListener('pointerdown', () => {
 const absList = () => Object.values(S.absence);
 const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
 const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
-// ما يُسجَّل مع الغياب في ورقة الفصل: التأخير الصباحي ومخالفات الزي والشعر. الأنواع نفسها في private.mark_kinds()
-// في قاعدة البيانات؛ لإضافة نوع أضفه هنا وهناك.
-const MARKS = {
-  late:{l:'متأخر', mode:'التأخير', g:'التأخير الصباحي'},
-  uniform:{l:'الزي', mode:'الزي', g:'مخالفة الزي'},
-  hair:{l:'الشعر', mode:'الشعر', g:'مخالفة الشعر'}
-};
-const MARK_KEYS = Object.keys(MARKS), VIOL_KEYS = MARK_KEYS.filter(k => k !== 'late');
+// ما يُسجَّل مع الغياب في ورقة الفصل: التأخير الصباحي (مشرف الجناح، ويصل لشؤون الطلبة). النوع نفسه في
+// private.mark_kinds() في قاعدة البيانات؛ لإضافة نوع أضفه هنا وهناك.
+const MARKS = {late:{l:'متأخر', mode:'التأخير', g:'التأخير الصباحي'}};
+const MARK_KEYS = Object.keys(MARKS);
+// مخالفات الزي والشعر: يسجلها المشرف العام وحده، ويصل إشعارها لمشرف جناح الطالب فقط (private.viol_kinds())
+const VIOLS = {uniform:{l:'الزي', g:'مخالفة الزي'}, hair:{l:'الشعر', g:'مخالفة الشعر'}};
+const VIOL_KEYS = Object.keys(VIOLS);
 const marksOf = (x, k) => (x && x.marks && Array.isArray(x.marks[k])) ? x.marks[k] : [];
 const lateCount = sheets => sheets.reduce((n, x) => n + marksOf(x, 'late').length, 0);
-const violCount = sheets => sheets.reduce((n, x) => n + VIOL_KEYS.reduce((m, k) => m + marksOf(x, k).length, 0), 0);
 const violTxt = n => n + (n >= 2 && n <= 10 ? ' مخالفات' : ' مخالفة');
-// «3 غائب · 2 متأخر · 1 مخالفة»: التأخير والمخالفات إن وُجدت
-const countsTxt = (a, l, v) => [a + ' غائب', l ? l + ' متأخر' : '', v ? violTxt(v) : ''].filter(Boolean).join(' · ');
-const dailyTxt = sheets => countsTxt(absCount(sheets), lateCount(sheets), violCount(sheets));
-const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : `<span class="mk mk-${k}">${esc(MARKS[k].l)}</span>`;
+// «3 غائب · 2 متأخر»: التأخير إن وُجد
+const countsTxt = (a, l) => [a + ' غائب', l ? l + ' متأخر' : ''].filter(Boolean).join(' · ');
+const dailyTxt = sheets => countsTxt(absCount(sheets), lateCount(sheets));
+const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : `<span class="mk mk-${k}">${esc((MARKS[k] || VIOLS[k] || {}).l || '')}</span>`;
 // طلاب الورقة مع ما سُجّل على كل واحد: الغائبون أولاً، ثم المتأخرون، ثم المخالفات
 function sheetPeople(x){
   const by = new Map(), add = (a, k) => { const p = by.get(a.id) || {id:a.id, name:a.name, kinds:[]}; p.kinds.push(k); by.set(a.id, p); };
@@ -456,6 +466,27 @@ const peopleLines = (x, empty) => { const ps = sheetPeople(x);
 // أسماء الغائبين تحت بعض: سطر لكل اسم
 const nameLines = (list, empty) => list.length ? list.map(a => `<span class="nl">${esc(a.name)}</span>`).join('') : esc(empty);
 const rosterOf = cls => M().students.filter(s => s.cls === cls);
+/* ===== مخالفات الزي والشعر ===== */
+const canViol = () => myRole() === 'head';
+const violList = () => Object.values(S.violations);
+const violSheet = (day, cls) => violList().find(x => x.day === day && x.cls === cls);
+const violCountOf = x => VIOL_KEYS.reduce((n, k) => n + marksOf(x, k).length, 0);
+// «الزي 1 · الشعر 2»
+const violSummary = x => VIOL_KEYS.map(k => marksOf(x, k).length ? VIOLS[k].l + ' ' + marksOf(x, k).length : '').filter(Boolean).join(' · ');
+// طلاب الورقة ومخالفات كل واحد
+function violPeople(x){
+  const by = new Map();
+  VIOL_KEYS.forEach(k => marksOf(x, k).forEach(a => { const p = by.get(a.id) || {id:a.id, name:a.name, kinds:[]}; p.kinds.push(k); by.set(a.id, p); }));
+  return Array.from(by.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+}
+// تصل مشرف جناح الفصل فقط (مثل private.push_on_violation)
+const violForMe = x => myRole() === 'supervisor' && !!myWing() && myWing().classes.includes(x.cls) && x.updatedBy !== S.uid && violCountOf(x) > 0;
+const violEvents = () => violList().filter(violForMe).map(x => ({viol:x, e:{t:x.updatedAt, by:x.updatedBy, ev:'violation'}}));
+function violAlert(row, prev){
+  if (!S.loaded || !violForMe(row) || Date.now() - (row.updatedAt || 0) > 120000 || !prefs().notify) return;
+  const had = new Set(prev ? VIOL_KEYS.flatMap(k => marksOf(prev, k).map(a => k + a.id)) : []);
+  if (VIOL_KEYS.some(k => marksOf(row, k).some(a => !had.has(k + a.id)))) alertEv({viol:row, e:{t:row.updatedAt, by:row.updatedBy}});
+}
 // إشعارات شؤون الطلبة: ما أرسله كل مشرف في يوم واحد يُجمع في إشعار واحد
 function absEvents(){
   const groups = {};

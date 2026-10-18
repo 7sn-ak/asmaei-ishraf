@@ -28,6 +28,7 @@ const API = (function(){
   const mapMarks = m => { const o = {}; if (m && typeof m === 'object' && !Array.isArray(m)) for (const k in m) if (Array.isArray(m[k])) o[k] = m[k]; return o; };
   const mapAbsence = r => ({id:r.id, day:r.day, cls:r.cls, total:r.total || 0, absent:Array.isArray(r.absent) ? r.absent : [], marks:mapMarks(r.marks), status:r.status,
     createdBy:r.created_by, updatedBy:r.updated_by, sentBy:r.sent_by || '', sentAt:ms(r.sent_at), updatedAt:ms(r.updated_at)});
+  const mapViol = r => ({id:r.id, day:r.day, cls:r.cls, marks:mapMarks(r.marks), createdBy:r.created_by, updatedBy:r.updated_by, createdAt:ms(r.created_at), updatedAt:ms(r.updated_at)});
   const mapPrefs = r => r ? {notify:!!r.notify, sound:!!r.sound, types:r.types || {}, lastSeen:ms(r.last_seen)} : null;
 
   function fail(err){
@@ -57,6 +58,7 @@ const API = (function(){
   const ACTION_COLS = '*';
   const LOG_COLS = 'id,action_id,at,by,ev,to_status,note';
   const ABS_COLS = 'id,day,cls,total,absent,marks,status,created_by,updated_by,sent_by,sent_at,updated_at';
+  const VIOL_COLS = 'id,day,cls,marks,created_by,updated_by,created_at,updated_at';
   const STAFF_COLS = 'id,name,username,role,is_admin,active,wing_id';
 
   return {
@@ -84,11 +86,13 @@ const API = (function(){
         all(() => sb.from('action_log').select(LOG_COLS).gte('at', sinceISO).order('id')),
         q(sb.from('prefs').select('*').maybeSingle()),
         all(() => sb.from('absence_sheets').select(ABS_COLS).gte('day', absSince).order('id')),
-        q(sb.from('wings').select('id,name,sort,classes').order('sort'))
+        q(sb.from('wings').select('id,name,sort,classes').order('sort')),
+        all(() => sb.from('violation_sheets').select(VIOL_COLS).gte('day', absSince).order('id'))
       ]);
-      return {staff:res[0].map(mapStaff), students:res[1].map(mapStudent), actions:res[2].map(mapAction), logs:res[3].map(mapLog), prefs:mapPrefs(res[4]), absence:res[5].map(mapAbsence), wings:res[6].map(mapWing)};
+      return {staff:res[0].map(mapStaff), students:res[1].map(mapStudent), actions:res[2].map(mapAction), logs:res[3].map(mapLog), prefs:mapPrefs(res[4]), absence:res[5].map(mapAbsence), wings:res[6].map(mapWing), violations:res[7].map(mapViol)};
     },
     async absenceFor(day){ return (await q(sb.from('absence_sheets').select(ABS_COLS).eq('day', day))).map(mapAbsence); },
+    async violationsFor(day){ return (await q(sb.from('violation_sheets').select(VIOL_COLS).eq('day', day))).map(mapViol); },
     async getAction(id){
       const res = await Promise.all([
         q(sb.from('actions').select(ACTION_COLS).eq('id', id).maybeSingle()),
@@ -105,6 +109,7 @@ const API = (function(){
         .on('postgres_changes', {event:'*', schema:'public', table:'students'}, p => h.student(p.eventType, p.new && p.new.id ? mapStudent(p.new) : null, p.old && p.old.id))
         .on('postgres_changes', {event:'*', schema:'public', table:'staff'}, p => h.staff(p.eventType, p.new && p.new.id ? mapStaff(p.new) : null, p.old && p.old.id))
         .on('postgres_changes', {event:'*', schema:'public', table:'absence_sheets'}, p => h.absence(p.eventType, p.new && p.new.id ? mapAbsence(p.new) : null, p.old && p.old.id))
+        .on('postgres_changes', {event:'*', schema:'public', table:'violation_sheets'}, p => h.violation(p.eventType, p.new && p.new.id ? mapViol(p.new) : null, p.old && p.old.id))
         .on('postgres_changes', {event:'*', schema:'public', table:'wings'}, p => h.wing(p.eventType, p.new && p.new.id ? mapWing(p.new) : null, p.old && p.old.id))
         .subscribe(status => { if (h.status) h.status(status); });
       return () => sb.removeChannel(ch);
@@ -129,6 +134,8 @@ const API = (function(){
     saveAbsence(day, cls, ids){ return q(sb.rpc('save_absence', {p_day:day, p_cls:cls, p_absent:ids})); },
     // ورقة الفصل كاملة: الغائبون، وما سُجّل على الحاضرين {late:[ids], uniform:[ids], hair:[ids]}
     saveDaily(day, cls, ids, marks){ return q(sb.rpc('save_daily', {p_day:day, p_cls:cls, p_absent:ids, p_marks:marks})); },
+    // مخالفات الزي والشعر لفصل في يوم (المشرف العام): {uniform:[ids], hair:[ids]}
+    saveViolations(day, cls, marks){ return q(sb.rpc('save_violations', {p_day:day, p_cls:cls, p_marks:marks})); },
     sendAbsence(day, classes){ return q(sb.rpc('send_absence', {p_day:day, p_classes:classes})); },
     unsendAbsence(day, classes){ return q(sb.rpc('unsend_absence', {p_day:day, p_classes:classes})); },
     async deleteAction(id){

@@ -108,6 +108,10 @@ button.row:active,.row.tap:active{background:var(--sunk)}
 /* «اليوم»: المفصولون بالأحمر، وحضور ولي الأمر بالبرتقالي */
 .grp.bad{color:var(--bad);background:var(--bad-bg)}
 .grp.warn{color:var(--warn);background:var(--warn-bg)}
+.grp.info{color:var(--info);background:var(--info-bg)}
+.abs-tags.inl{display:inline-flex;margin:0 4px;vertical-align:1px}
+.ty-viol{--c:var(--info);--cb:var(--info-bg)}
+.vs-who{margin:0;border-radius:0;border-bottom:1px solid var(--rule)}
 .banner b{font-weight:700}
 .row-acts{display:flex;gap:6px;flex:none}
 .row.stacked{flex-wrap:wrap;row-gap:10px}
@@ -339,7 +343,7 @@ details.more-box[open]{padding-bottom:12px}
 .abs-none{padding:10px 14px;border-top:1px solid var(--rule)}
 
 /* ما يسجله المشرف الآن فوق الفصول: الغياب، التأخير، الزي، الشعر (يبقى ظاهراً أثناء التمرير) */
-.abs-modes{position:sticky;top:-16px;z-index:2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding-block:8px;margin-block:-8px;background:var(--sheet)}
+.abs-modes{position:sticky;top:-16px;z-index:2;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;padding-block:8px;margin-block:-8px;background:var(--sheet)}
 .abs-modes button{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px 5px;min-height:46px;padding:4px;border:1.5px solid var(--rule);border-radius:var(--r-s);background:var(--sheet);font-weight:700;font-size:15px;line-height:1.2;color:var(--ink-2)}
 .abs-modes .n{min-width:20px;padding:0 5px;border-radius:999px;background:var(--sunk);font-size:12.5px;font-variant-numeric:tabular-nums}
 .abs-modes .m-absent[aria-pressed="true"]{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
@@ -378,7 +382,8 @@ details.more-box[open]{padding-bottom:12px}
 .pr-sub{font-size:11pt}
 .pr-title{margin-inline-start:auto;text-align:left}
 .pr-title b{display:block;font-size:15pt}
-.pr-sum{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:12px}
+.pr-sum{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.pr-late{width:60%}
 .pr-sum div{border:1px solid #000;border-radius:6px;padding:6px 8px;text-align:center}
 .pr-sum span{display:block;font-size:10.5pt}
 .pr-sum b{font-size:16pt;font-variant-numeric:tabular-nums}
