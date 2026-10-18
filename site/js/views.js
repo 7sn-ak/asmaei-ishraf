@@ -110,16 +110,6 @@ function todayCard(){
     `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ولا مخالفة ${esc(dl)}.</p>`}</div>`;
 }
 
-/* التأخير الصباحي في رئيسية المشرف: خانة منفصلة عن الغياب، يُحفظ في سجل الطالب ولا يُرسل لأحد */
-function lateCard(){
-  const cl = myClasses(), t = today();
-  if (myRole() !== 'supervisor' || !cl || isWeekend(t)) return '';
-  const n = cl.reduce((k, c) => k + lateIdsOf(t, c).size, 0);
-  return `<div class="sec-h"><h2>التأخير الصباحي</h2><span class="meta">${esc(dayLabel(t))}</span></div>
-    <div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${n ? `سُجّل اليوم ${n} متأخر` : 'لم يُسجَّل تأخير اليوم'}</div>
-      <div class="t2 wrap">يُحفظ في سجل الطالب، ولا يُرسل لأحد.</div></div><button class="btn sm ${n ? 'ghost' : 'primary'}" data-act="late-open">تسجيل التأخير</button></div></div>`;
-}
-
 /* مخالفات الزي والشعر في رئيسية المشرف العام: عدد اليوم، وزر التسجيل */
 function violCard(){
   const t = today(), head = `<div class="sec-h"><h2>مخالفات الزي والشعر</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
@@ -129,28 +119,33 @@ function violCard(){
     <div class="t2 wrap">يصل الإشعار لمشرف جناح الطالب فقط.</div></div><button class="btn sm primary" data-act="viol-open">تسجيل المخالفات</button></div></div>`;
 }
 
-/* الغياب اليومي في الرئيسية: بطاقة المشرف، وملخص شؤون الطلبة */
+/* الغياب والتأخير في رئيسية المشرف: خانتان منفصلتان. الغياب يُعتمد ويصل لشؤون الطلبة، والتأخير يُحفظ في
+   سجل الطالب ولا يُرسل لأحد. ثم ملخص شؤون الطلبة (absenceToday) */
 function absenceCard(){
   const cl = myClasses(), w = myWing(), t = today();
-  const head = `<div class="sec-h"><h2>الغياب اليومي</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
+  const head = `<div class="sec-h"><h2>الغياب والتأخير</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
   if (!cl) {
     const btn = !w && canAdmin() ? `<button class="btn sm primary" data-act="staff-open" data-id="${esc(S.uid)}">تحديد جناحي</button>`
       : w && canWings() ? `<button class="btn sm primary" data-act="wing-open" data-id="${w.id}">إضافة الفصول</button>` : '';
     return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${w ? 'لم تُضف فصول ' + esc(w.name) + ' بعد' : 'لم يُحدَّد جناحك بعد'}</div>
-      <div class="t2 wrap">${w ? (canWings() ? 'أضفها من «المزيد» ← الأجنحة، فتظهر لك فصول جناحك فقط وتسجل غيابها اليومي.' : 'يضيفها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')
-        : (canAdmin() ? 'اختر جناحك، فتظهر لك فصوله فقط في الرئيسية وتسجل غيابها اليومي.' : 'يحدده مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')}</div></div>${btn}</div></div>`;
+      <div class="t2 wrap">${w ? (canWings() ? 'أضفها من «المزيد» ← الأجنحة، فتظهر لك فصول جناحك فقط وتسجل غيابها وتأخيرها.' : 'يضيفها مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')
+        : (canAdmin() ? 'اختر جناحك، فتظهر لك فصوله فقط في الرئيسية وتسجل غيابها وتأخيرها.' : 'يحدده مسؤول الموقع أو المشرف العام، وتظهر لك بعدها فصول جناحك فقط.')}</div></div>${btn}</div></div>`;
   }
-  // الجمعة والسبت عطلة: لا غياب
+  // الجمعة والسبت عطلة: لا غياب ولا تأخير
   if (isWeekend(t)) return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">اليوم عطلة نهاية الأسبوع</div>
-      <div class="t2 wrap">لا يُسجَّل غياب يوم الجمعة والسبت. يعود التسجيل يوم الأحد.</div></div></div></div>`;
+      <div class="t2 wrap">لا يُسجَّل غياب ولا تأخير يوم الجمعة والسبت. يعود التسجيل يوم الأحد.</div></div></div></div>`;
   const sheets = cl.map(c => absSheet(t, c)).filter(Boolean);
   const sent = sheets.filter(x => x.status === 'sent'), drafts = sheets.filter(x => x.status === 'draft');
-  const done = sheets.length === cl.length && !drafts.length, n = dailyTxt(sheets);
-  const line = !sheets.length ? 'لم يُسجَّل غياب اليوم بعد'
-    : done ? `أُرسل لشؤون الطلبة ${fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))} · ${n}`
-    : `سُجّل ${sheets.length} من ${cl.length} · ${n}${drafts.length ? ' · لم يُعتمد بعد' : ''}`;
-  return head + `<div class="list"><div class="setrow"><div class="main"><div class="t1 wrap">${esc(line)}</div><div class="t2 wrap">${esc(w.name + ': ' + cl.join(' · '))}</div></div>
-    <button class="btn sm ${done ? 'ghost' : 'primary'}" data-act="abs-open">${!sheets.length ? 'تسجيل الغياب' : done ? 'عرض' : 'إكمال واعتماد'}</button></div></div>`;
+  const done = sheets.length === cl.length && !drafts.length, n = absCount(sheets);
+  const of = `سُجّل ${sheets.length} من ${cl.length} ${cl.length === 1 ? 'فصل' : 'فصول'}`;
+  const ab = !sheets.length ? ['', ['يصل لشؤون الطلبة بعد اعتمادك'], 'تسجيل الغياب', true]
+    : done ? [n ? n + ' غائب' : 'لا غياب', ['أُرسل لشؤون الطلبة ' + fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))], 'عرض', false]
+    : [n ? n + ' غائب' : 'لا غياب', [of].concat(drafts.length ? ['لم يُعتمد بعد'] : []), 'إكمال واعتماد', true];
+  const ln = cl.reduce((k, c) => k + lateIdsOf(t, c).size, 0);
+  // [الرقم، أسطر الشرح، الزر، الزر الرئيسي]
+  const box = (act, kind, label, [v, sub, go, main]) => `<button class="box k-${kind}" data-act="${act}"><span class="lb">${label}</span>
+      <b${v ? '' : ' class="none"'}>${esc(v || 'لم يُسجَّل بعد')}</b><small>${sub.map(x => `<span class="nl">${esc(x)}</span>`).join('')}</small><span class="btn sm ${main ? 'primary' : 'ghost'}">${go}</span></button>`;
+  return head + `<div class="duo">${box('abs-open', 'absent', 'الغياب', ab)}${box('late-open', 'late', 'التأخير', [ln ? ln + ' متأخر' : '', ['يُحفظ في سجل الطالب، ولا يُرسل لأحد'], 'تسجيل التأخير', !ln])}</div>`;
 }
 function absenceToday(){
   const t = today();
@@ -218,7 +213,6 @@ const VIEWS = {
         <div id="h-banner" class="stack"></div>
         <section class="sec" id="h-today" hidden></section>
         <section class="sec" id="h-abs" hidden></section>
-        <section class="sec" id="h-late" hidden></section>
         <section class="sec" id="h-attn"></section>
         <section class="sec" id="h-week"></section>
         <section class="sec" id="h-top"></section>
@@ -237,8 +231,6 @@ const VIEWS = {
       ht.innerHTML = td; ht.hidden = !td;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : canViol() ? violCard() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
-      const hl = $('#h-late', el), lc = lateCard();
-      hl.innerHTML = lc; hl.hidden = !lc;
       $('#h-attn', el).innerHTML = attention();
 
       const ws = weekStart(), wk = scope.filter(a => (a.date||'') >= ws);
@@ -411,7 +403,8 @@ const VIEWS = {
           <a class="btn sm ghost" href="https://wa.me/${esc(waNum(phone))}" target="_blank" rel="noopener">${icon('chat','sm')}واتساب</a>
           <a class="btn sm ghost" href="tel:${esc(phoneDigits(phone))}">${icon('summon','sm')}اتصال</a></div>` : ''}
         ${s && s.notes ? `<p class="details">${esc(s.notes)}</p>` : ''}
-        <div class="stats">${TYPE_KEYS.map(k => `<div class="stat ty-${k}"><span class="lb">${TYPES[k].label}</span><b>${by[k]||0}</b></div>`).join('')}</div>
+        <div class="stats five">${TYPE_KEYS.map(k => `<div class="stat ty-${k}"><span class="lb">${TYPES[k].label}</span><b>${by[k]||0}</b></div>`).join('')}
+          <div class="stat ty-late" id="p-late"><span class="lb">تأخير</span><b>${lates.length}</b></div></div>
         ${daily ? `<p class="meta" id="p-daily">الغياب اليومي، آخر 30 يوماً: ${esc(daily)}</p>` : ''}
         ${recent >= 3 ? `<div class="banner warn">${icon('alert')}<div>عدد الإجراءات على هذا الطالب خلال آخر 30 يوماً: ${recent}.</div></div>` : ''}
         ${canRecord() ? `<button class="btn primary block" data-act="record" data-student="${esc(id)}">${icon('plus','sm')}تسجيل إجراء لهذا الطالب</button>` : ''}

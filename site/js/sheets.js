@@ -72,25 +72,25 @@ function openSheet(kind, title, body, foot, data){
   const sh = $('#sheet');
   sh.innerHTML = `<div class="sheet-h"><h2 id="sheetTitle">${esc(title)}</h2><button class="iconbtn" data-act="close-sheet" aria-label="إغلاق">${icon('x')}</button></div>
     <div class="sheet-b" id="sheetBody">${body}</div>${foot ? `<div class="sheet-f" id="sheetFoot">${foot}</div>` : ''}`;
-  sh.hidden = false; $('#scrim').hidden = false;
+  sh.hidden = false; $('#scrim').hidden = false; sh.dataset.kind = kind;
   document.body.style.overflow = 'hidden';
   S.sheet = Object.assign({kind}, data || {});
 }
 function closeSheet(){
   const sh = $('#sheet');
   if (sh.hidden) return;
-  sh.hidden = true; sh.innerHTML = ''; $('#scrim').hidden = true;
+  sh.hidden = true; sh.innerHTML = ''; $('#scrim').hidden = true; delete sh.dataset.kind;
   document.body.style.overflow = '';
   S.sheet = null;
 }
 function refreshSheet(){
   if (!S.sheet) return;
   if (S.sheet.kind === 'absence') return renderAbsence();
+  if (S.sheet.kind === 'late') return renderLate();
   const body = $('#sheetBody'), ae = document.activeElement;
   if (body && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (S.sheet.kind === 'absview') return renderAbsView();
   if (S.sheet.kind === 'violview') return renderViolView();
-  if (S.sheet.kind === 'late') return renderLate();
   if (S.sheet.kind === 'viol') return renderViolSheet();
   if (S.sheet.kind === 'action') renderActionBody();
 }
@@ -543,43 +543,72 @@ function openAbsence(day){
   if (!ABS || ABS.day !== day || ABS.classes.join('|') !== cl.join('|')) {
     const picks = {};
     cl.forEach(c => { const x = absSheet(day, c); picks[c] = new Set(x ? x.absent.map(a => a.id) : []); });
-    ABS = {day, classes:cl, picks, open:cl.find(c => !absSheet(day, c)) || null, timers:{}, pending:{}, saving:{}};
+    ABS = {day, classes:cl, picks, cur:cl.find(c => !absSheet(day, c)) || cl[0], timers:{}, pending:{}, saving:{}};
   }
   openSheet('absence', 'الغياب اليومي', '', '<div id="abs-foot" class="stack-s"></div>', {day});
   renderAbsence();
 }
-function absBlock(c){
-  const x = absSheet(ABS.day, c), set = ABS.picks[c], late = lateIdsOf(ABS.day, c), roster = rosterOf(c), open = ABS.open === c, sent = x && x.status === 'sent';
-  const st = ABS.saving[c] ? 'يُحفظ…' : ABS.pending[c] ? 'لم يُحفظ بعد' : sent ? 'أُرسل' : x ? 'محفوظ' : 'لم يُسجَّل';
-  const tone = sent ? 'ok' : (x && !ABS.pending[c]) ? 'info' : 'mute';
-  const count = set.size ? `${set.size} غائب من ${roster.length}` : x ? 'لا غياب' : `${roster.length} طالب`;
-  let inner = '';
-  // المتأخر اليوم (من خانة التأخير) يظهر معلَّماً، ولا يُسجَّل غائباً
-  if (open) inner = sent ? `<p class="abs-names">${nameLines(x.absent, 'لا غياب')}</p>`
-    : roster.length ? `<div class="abs-list">${roster.map(s => `<button class="abs-stu" data-act="abs-stu" data-cls="${esc(c)}" data-id="${esc(s.id)}" data-m="absent" aria-pressed="${set.has(s.id)}">
-        <span>${esc(s.name)}</span><span class="abs-tags">${set.has(s.id) ? mkTag('absent') : late.has(s.id) ? mkTag('late') : ''}</span></button>`).join('')}</div>
-        ${set.size ? '' : `<div class="abs-none"><button class="btn ok sm" data-act="abs-none" data-cls="${esc(c)}">${icon('check','sm')}لا غياب في ${esc(c)}</button></div>`}`
-    : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>';
-  return `<section class="abs-cls${open ? ' open' : ''}"><button class="abs-h" data-act="abs-cls" data-cls="${esc(c)}" aria-expanded="${open}">
-      <b>${esc(c)}</b><span class="meta">${esc(count)}</span><span class="grow"></span><span class="pill tone-${tone}">${esc(st)}</span></button>${inner}</section>`;
+/* كشف الفصل (الغياب والتأخير بالشكل نفسه): الفصول في الأعلى، ثم أسماء الفصل المختار مرقّمة مع دائرة
+   التحديد، ثم «التالي» للفصل التالي. */
+// صف الطالب: الرقم، والاسم، ودائرة التحديد. other: ما سُجّل عليه في الخانة الأخرى (فلا يُحدَّد هنا)
+const rollRow = (act, c, s, n, on, kind, other) => `<button class="abs-stu roll-row" data-act="${act}" data-cls="${esc(c)}" data-id="${esc(s.id)}" data-m="${kind}" aria-pressed="${on}"${other ? ' aria-disabled="true"' : ''}>
+    <span class="no${typeof n === 'string' ? ' cl' : ''}">${esc(n)}</span><span class="nm">${esc(s.name)}</span><span class="tg">${on ? mkTag(kind) : other ? mkTag(other) : ''}${other ? '' : `<span class="dot">${icon('check','sm')}</span>`}</span></button>`;
+// «اليوم، الأربعاء»: قصير فيتسع مع ما سُجّل في سطر واحد، ولا يشتبه بأسماء الفصول مثل 10/14
+const rollDay = d => d === today() ? 'اليوم، ' + fmtDay(d, {weekday:'long'}) : fmtDay(d);
+const rollTop = (kind, sum, chips, prog) => `<div class="roll-top k-${kind}"><div class="roll-sum">${sum}</div>${prog ? '<div class="progress roll-prog"><i></i></div>' : ''}
+    <div class="chips multi roll-chips" role="group" aria-label="الفصل">${chips}</div></div>`;
+// حالة الفصل في ورقة الغياب
+function absState(c){
+  const x = absSheet(ABS.day, c);
+  if (ABS.saving[c]) return {l:'يُحفظ…', tone:'mute', cls:'wait'};
+  if (ABS.pending[c]) return {l:'لم يُحفظ بعد', tone:'warn', cls:'wait'};
+  if (x && x.status === 'sent') return {l:'أُرسل', tone:'ok', cls:'done'};
+  if (x) return {l:'محفوظ، لم يُعتمد', tone:'info', cls:'done'};
+  return {l:'لم يُسجَّل', tone:'mute', cls:''};
 }
 function renderAbsence(){
   const body = $('#sheetBody'), foot = $('#abs-foot');
   if (!ABS || !S.sheet || S.sheet.kind !== 'absence' || !body) return;
-  const sc = body.scrollTop;
-  body.innerHTML = `<p class="meta">${esc(fmtDay(ABS.day))}. اضغط الفصل واختر الغائبين، أو «لا غياب». يُحفظ كل تغيير تلقائياً، ولا يصل لشؤون الطلبة إلا بعد الاعتماد.</p>` +
-    ABS.classes.map(absBlock).join('');
+  const sc = body.scrollTop, cls = ABS.classes, c = ABS.cur;
+  const isRec = k => !!(absSheet(ABS.day, k) || ABS.pending[k] || ABS.saving[k]);
+  const recorded = cls.filter(isRec).length;
+  const chips = cls.map(k => { const st = absState(k), n = ABS.picks[k].size;
+    return `<button type="button" class="chip${st.cls ? ' ' + st.cls : ''}" data-act="abs-cls" data-cls="${esc(k)}" aria-pressed="${k === c}">${esc(k)}${n ? `<span class="n">${n}</span>` : st.cls === 'done' ? icon('check','sm') : ''}</button>`; }).join('');
+  const x = absSheet(ABS.day, c), set = ABS.picks[c], late = lateIdsOf(ABS.day, c), roster = rosterOf(c), sent = x && x.status === 'sent', st = absState(c);
+  const next = cls[cls.indexOf(c) + 1], rec = isRec(c), todo = cls.filter(k => k !== c && !isRec(k));
+  // المتأخر اليوم (من خانة التأخير) يظهر معلَّماً، ولا يُسجَّل غائباً
+  const panel = sent ? `<p class="abs-names">${nameLines(x.absent, 'لا غياب')}</p>`
+    : roster.length ? `<div class="roll-list">${roster.map((s, i) => rollRow('abs-stu', c, s, i + 1, set.has(s.id), 'absent', !set.has(s.id) && late.has(s.id) ? 'late' : '')).join('')}</div>`
+    : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>';
+  // لا غياب في الفصل: زر قبل التسجيل، وعلامة بعده. ثم الفصل التالي، وفي آخر فصل: أول فصل لم يُسجَّل
+  const acts = (sent ? '' : !rec && roster.length ? `<button class="btn ok" data-act="abs-none" data-cls="${esc(c)}">${icon('check','sm')}لا غياب في ${esc(c)}</button>`
+      : rec && !set.size ? `<span class="roll-ok">${icon('check','sm')}لا غياب في ${esc(c)}</span>` : '') +
+    (next ? `<button class="btn ${rec ? 'primary' : 'ghost'}" data-act="abs-next">التالي: ${esc(next)}</button>`
+      : todo.length ? `<button class="btn ghost" data-act="abs-cls" data-cls="${esc(todo[0])}">لم يُسجَّل بعد: ${esc(todo[0])}</button>`
+      : rec && !sent ? '<p class="meta">سُجّلت كل الفصول. اعتمد من الأسفل.</p>' : '');
+  body.innerHTML = rollTop('absent', `<span>${esc(rollDay(ABS.day))}</span><span class="meta">سُجّل ${recorded} من ${cls.length} ${cls.length === 1 ? 'فصل' : 'فصول'}</span>`, chips, true) +
+    `<section class="roll"><div class="roll-h"><b>${esc(c)}</b><span class="meta">${roster.length} طالب${set.size ? ' · ' + set.size + ' غائب' : ''}</span><span class="grow"></span><span class="pill tone-${st.tone}">${esc(st.l)}</span></div>
+      ${panel}${acts ? `<div class="roll-acts">${acts}</div>` : ''}</section>
+    <p class="meta">اضغط اسم الغائب، أو «لا غياب في الفصل». يُحفظ كل تغيير تلقائياً، ولا يصل لشؤون الطلبة إلا بعد الاعتماد.</p>`;
+  const bar = $('.roll-prog i', body); if (bar) bar.style.width = Math.round(recorded * 100 / Math.max(1, cls.length)) + '%';
   body.scrollTop = sc;
-  const xs = ABS.classes.map(c => absSheet(ABS.day, c)).filter(Boolean);
-  const drafts = xs.filter(x => x.status === 'draft'), sent = xs.filter(x => x.status === 'sent');
-  const missing = ABS.classes.filter(c => !absSheet(ABS.day, c) && !ABS.pending[c]);
-  const n = ABS.classes.reduce((k, c) => k + ABS.picks[c].size, 0), waiting = Object.keys(ABS.pending).length + Object.keys(ABS.saving).length;
+  const xs = cls.map(k => absSheet(ABS.day, k)).filter(Boolean);
+  const drafts = xs.filter(y => y.status === 'draft'), sentAll = xs.filter(y => y.status === 'sent');
+  const missing = cls.filter(k => !absSheet(ABS.day, k) && !ABS.pending[k]);
+  const n = cls.reduce((k, y) => k + ABS.picks[y].size, 0), waiting = Object.keys(ABS.pending).length + Object.keys(ABS.saving).length;
   if (drafts.length || waiting) foot.innerHTML = `<p class="meta">المجموع: ${n} غائب${missing.length ? ' · لم يُسجَّل بعد: ' + esc(missing.join('، ')) : ''}</p>` +
     `<button class="btn primary block" data-act="abs-send">اعتماد وإرسال لشؤون الطلبة</button>`;
-  else if (sent.length) foot.innerHTML = `<p class="meta">أُرسل لشؤون الطلبة ${esc(fmtTime(Math.max.apply(null, sent.map(x => x.sentAt))))}${missing.length ? ' · لم يُسجَّل: ' + esc(missing.join('، ')) : ''}.</p>
+  else if (sentAll.length) foot.innerHTML = `<p class="meta">أُرسل لشؤون الطلبة ${esc(fmtTime(Math.max.apply(null, sentAll.map(y => y.sentAt))))}${missing.length ? ' · لم يُسجَّل: ' + esc(missing.join('، ')) : ''}.</p>
     <button class="btn ghost block" data-act="abs-unsend" data-confirm="اضغط مرة أخرى لإلغاء الإرسال">إلغاء الإرسال للتعديل</button>`;
   else foot.innerHTML = '<p class="meta">اختر الغائبين في كل فصل أو «لا غياب»، ثم اعتمد.</p>';
 }
+// الانتقال لفصل: يُعرض من أوله
+function absGoto(c){
+  if (!ABS || !ABS.classes.includes(c)) return;
+  ABS.cur = c; renderAbsence();
+  const b = $('#sheetBody'); if (b) b.scrollTop = 0;
+}
+const absNext = () => ABS && ABS.classes[ABS.classes.indexOf(ABS.cur) + 1];
 function absToggle(c, id){
   const x = absSheet(ABS.day, c);
   if (x && x.status === 'sent') return toast(ERR.already_sent, {bad:true});
@@ -667,33 +696,52 @@ function openLate(){
   if (!cl) return toast(myWing() ? 'لم تُضف فصول جناحك بعد.' : 'لم يُحدَّد جناحك بعد.', {bad:true});
   const day = today();
   if (isWeekend(day)) return toast('الجمعة والسبت عطلة.');
-  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, open:cl[0], picks:{}, timers:{}, pending:{}, saving:{}};
-  openSheet('late', 'التأخير الصباحي', '', '<div id="late-foot" class="stack-s"></div>', {day});
+  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, cur:cl[0], q:'', picks:{}, timers:{}, pending:{}, saving:{}};
+  // البحث بالاسم في فصول الجناح كلها: المتأخرون يصلون واحداً واحداً من فصول مختلفة
+  openSheet('late', 'التأخير الصباحي', `<div class="search q-box">${icon('search')}<input id="late-q" type="search" enterkeyhint="search" placeholder="ابحث باسم الطالب" aria-label="ابحث باسم الطالب في فصول جناحك" autocomplete="off" data-in="late-q" value="${esc(LS.q)}">
+      <button type="button" class="q-x" data-act="late-q-x" aria-label="مسح البحث"${LS.q ? '' : ' hidden'}>${icon('x','sm')}</button></div>
+    <div id="late-main" class="sheet-in"></div>`, '<div id="late-foot" class="stack-s"></div>', {day});
   renderLate();
 }
 const lsPicks = c => LS.picks[c] || (LS.picks[c] = lateIdsOf(LS.day, c));
+const absIds = (day, c) => new Set(((absSheet(day, c) || {}).absent || []).map(a => a.id));
 function renderLate(){
-  const body = $('#sheetBody'), foot = $('#late-foot');
-  if (!LS || !S.sheet || S.sheet.kind !== 'late' || !body) return;
-  const sc = body.scrollTop;
-  body.innerHTML = `<p class="meta">${esc(fmtDay(LS.day))}. اضغط الفصل ثم أسماء المتأخرين. يُحفظ في سجل الطالب مباشرة، ولا يُرسل لأحد.</p>` +
-    LS.classes.map(c => {
-      const p = lsPicks(c), roster = rosterOf(c), open = LS.open === c, ab = new Set(((absSheet(LS.day, c) || {}).absent || []).map(a => a.id));
-      const st = LS.saving[c] ? 'يُحفظ…' : LS.pending[c] ? 'لم يُحفظ بعد' : '';
-      return `<section class="abs-cls${open ? ' open' : ''}"><button class="abs-h" data-act="late-cls" data-cls="${esc(c)}" aria-expanded="${open}">
-          <b>${esc(c)}</b><span class="meta">${p.size ? p.size + ' متأخر' : roster.length + ' طالب'}</span><span class="grow"></span>${st ? `<span class="pill tone-mute">${esc(st)}</span>` : ''}</button>
-        ${open ? (roster.length ? `<div class="abs-list">${roster.map(s => `<button class="abs-stu" data-act="late-stu" data-cls="${esc(c)}" data-id="${esc(s.id)}" data-m="late" aria-pressed="${p.has(s.id)}">
-          <span>${esc(s.name)}</span><span class="abs-tags">${p.has(s.id) ? mkTag('late') : ab.has(s.id) ? mkTag('absent') : ''}</span></button>`).join('')}</div>`
-          : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>') : ''}</section>`;
-    }).join('');
+  const body = $('#sheetBody'), main = $('#late-main'), foot = $('#late-foot');
+  if (!LS || !S.sheet || S.sheet.kind !== 'late' || !body || !main) return;
+  const sc = body.scrollTop, cls = LS.classes, c = LS.cur, total = cls.reduce((k, y) => k + lsPicks(y).size, 0), q = norm(LS.q);
+  const sum = `<span>${esc(rollDay(LS.day))}</span><span class="meta">${total ? total + ' متأخر اليوم' : 'لم يُسجَّل تأخير اليوم'}</span>`;
+  if (foot) foot.innerHTML = `<p class="meta">${total ? `اليوم: ${total} متأخر` : 'لم يُسجَّل تأخير اليوم.'} · يُحفظ في سجل الطالب، ولا يُرسل لأحد.</p>`;
+  if (q) {
+    const hits = cls.flatMap(k => { const ab = absIds(LS.day, k), p = lsPicks(k);
+      return rosterOf(k).filter(s => norm(s.name).includes(q)).map(s => rollRow('late-stu', k, s, k, p.has(s.id), 'late', !p.has(s.id) && ab.has(s.id) ? 'absent' : '')); });
+    main.innerHTML = `<div class="roll-top k-late"><div class="roll-sum">${sum}</div></div>
+      <section class="roll"><div class="roll-h"><b>نتائج البحث</b><span class="meta">${hits.length > 40 ? 'أول 40 من ' + hits.length : hits.length ? hits.length + ' طالب في فصول جناحك' : ''}</span></div>
+      ${hits.length ? `<div class="roll-list">${hits.slice(0, 40).join('')}</div>${hits.length > 40 ? '<p class="abs-names meta">اكتب جزءاً أطول من الاسم لتقل النتائج.</p>' : ''}`
+        : '<p class="abs-names meta">لا يوجد طالب بهذا الاسم في فصول جناحك.</p>'}</section>`;
+    body.scrollTop = sc;
+    return;
+  }
+  const chips = cls.map(k => { const n = lsPicks(k).size, w = LS.pending[k] || LS.saving[k];
+    return `<button type="button" class="chip${w ? ' wait' : ''}" data-act="late-cls" data-cls="${esc(k)}" aria-pressed="${k === c}">${esc(k)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('');
+  const p = lsPicks(c), roster = rosterOf(c), ab = absIds(LS.day, c), next = cls[cls.indexOf(c) + 1];
+  const st = LS.saving[c] ? 'يُحفظ…' : LS.pending[c] ? 'لم يُحفظ بعد' : '';
+  main.innerHTML = rollTop('late', sum, chips, false) +
+    `<section class="roll"><div class="roll-h"><b>${esc(c)}</b><span class="meta">${roster.length} طالب${p.size ? ' · ' + p.size + ' متأخر' : ''}</span><span class="grow"></span>${st ? `<span class="pill tone-mute">${esc(st)}</span>` : ''}</div>
+      ${roster.length ? `<div class="roll-list">${roster.map((s, i) => rollRow('late-stu', c, s, i + 1, p.has(s.id), 'late', !p.has(s.id) && ab.has(s.id) ? 'absent' : '')).join('')}</div>`
+        : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>'}
+      ${next ? `<div class="roll-acts"><button class="btn ghost" data-act="late-next">التالي: ${esc(next)}</button></div>` : ''}</section>
+    <p class="meta">اضغط اسم المتأخر، أو ابحث عنه باسمه. يُحفظ في سجل الطالب مباشرة، ولا يُرسل لأحد.</p>`;
   body.scrollTop = sc;
-  const n = LS.classes.reduce((k, c) => k + lsPicks(c).size, 0);
-  if (foot) foot.innerHTML = `<p class="meta">${n ? `اليوم: ${n} متأخر` : 'لم يُسجَّل تأخير اليوم.'} · يُحفظ في سجل الطالب، ولا يُرسل لأحد.</p>`;
+}
+function lateGoto(c){
+  if (!LS || !LS.classes.includes(c)) return;
+  LS.cur = c; renderLate();
+  const b = $('#sheetBody'); if (b) b.scrollTop = 0;
 }
 function lateToggle(c, id){
   if (!LS) return;
   const p = lsPicks(c);
-  if (!p.has(id) && ((absSheet(LS.day, c) || {}).absent || []).some(a => a.id === id)) return toast(ERR.absent_marked, {bad:true});
+  if (!p.has(id) && absIds(LS.day, c).has(id)) return toast(ERR.absent_marked, {bad:true});
   if (p.has(id)) p.delete(id); else p.add(id);
   LS.pending[c] = true; clearTimeout(LS.timers[c]);
   LS.timers[c] = setTimeout(() => saveLateClass(c), 700);
@@ -871,7 +919,8 @@ document.addEventListener('click', e => {
     case 'go': go(el.dataset.v); break;
     case 'go-log': S.f.log = {type:el.dataset.type || 'all', status:el.dataset.status || 'all', period:el.dataset.period || 'all', cls:el.dataset.cls || 'all', q:'', limit:120}; go('log'); break;
     case 'abs-open': openAbsence(); break;
-    case 'abs-cls': ABS.open = ABS.open === el.dataset.cls ? null : el.dataset.cls; renderAbsence(); break;
+    case 'abs-cls': absGoto(el.dataset.cls); break;
+    case 'abs-next': if (absNext()) absGoto(absNext()); break;
     case 'abs-stu': absToggle(el.dataset.cls, id); break;
     case 'viol-open': openViolations(); break;
     case 'open-viol': openViolView(el.dataset.day); break;
@@ -879,9 +928,11 @@ document.addEventListener('click', e => {
     case 'vs-cls': if (VS) { VS.cls = el.dataset.cls; renderViolSheet(); const b = $('#sheetBody'), r = b && $('#vs-roster', b); if (r) b.scrollTop = Math.max(0, r.offsetTop - 120); } break;
     case 'vs-stu': vsToggle(el.dataset.cls, id); break;
     case 'late-open': openLate(); break;
-    case 'late-cls': if (LS) { LS.open = LS.open === el.dataset.cls ? null : el.dataset.cls; renderLate(); } break;
+    case 'late-cls': lateGoto(el.dataset.cls); break;
+    case 'late-next': if (LS) lateGoto(LS.classes[LS.classes.indexOf(LS.cur) + 1]); break;
     case 'late-stu': lateToggle(el.dataset.cls, id); break;
-    case 'abs-none': ABS.picks[el.dataset.cls].clear(); queueAbsSave(el.dataset.cls, true); renderAbsence(); break;
+    case 'late-q-x': if (LS) { LS.q = ''; const i = $('#late-q'); if (i) { i.value = ''; i.focus(); } el.hidden = true; renderLate(); } break;
+    case 'abs-none': { const c = el.dataset.cls; ABS.picks[c].clear(); queueAbsSave(c, true); if (ABS.cur === c && absNext()) absGoto(absNext()); else renderAbsence(); break; }
     case 'abs-send': absSend(); break;
     case 'abs-unsend': absUnsend(); break;
     case 'open-absence': openAbsenceView(el.dataset.day); break;
@@ -965,6 +1016,7 @@ document.addEventListener('input', e => {
   if (!k) return;
   if (k === 'log-q' || k === 'stu-q') { S.f[k === 'log-q' ? 'log' : 'stu'].q = e.target.value; clearTimeout(inputTimer); inputTimer = setTimeout(update, 140); }
   else if (k === 'r-q') { R.q = e.target.value; R.isNew = false; const n = $('#r-new'); if (n) n.hidden = true; renderRRes(); }
+  else if (k === 'late-q') { if (LS) { LS.q = e.target.value; const x = $('#sheet .q-x'); if (x) x.hidden = !LS.q; renderLate(); } }
   else if (k === 'imp') impSummary();
 });
 document.addEventListener('change', e => {
