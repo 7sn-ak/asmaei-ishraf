@@ -155,12 +155,6 @@ button.row:active,.row.tap:active{background:var(--sunk)}
 .search{position:relative}
 .search .ic{position:absolute;top:50%;inset-inline-start:12px;transform:translateY(-50%);color:var(--ink-3);pointer-events:none}
 .search input{padding-inline-start:42px}
-/* بحث بزر مسح: في التأخير الصباحي */
-.q-box input{padding-inline-end:46px}
-.q-box input::-webkit-search-cancel-button{display:none}
-.q-x{position:absolute;top:50%;inset-inline-end:4px;transform:translateY(-50%);display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:var(--ink-3)}
-.q-x .ic{position:static;transform:none}
-.sheet-in{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-block:2px}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border:1px solid var(--rule);border-radius:999px;background:var(--sheet);font-size:14.5px;color:var(--ink-2);white-space:nowrap}
@@ -297,7 +291,7 @@ details.more-box[open]{padding-bottom:12px}
 .sheet-b{overflow-y:auto;overscroll-behavior:contain;grid-auto-rows:max-content;padding-block:16px 20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:16px;align-content:start}
 .sheet-f{border-top:1px solid var(--rule);padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:8px}
 @keyframes rise{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
-/* كشف الغياب والتأخير بطول ثابت: لا تقفز النافذة بين فصل طويل وقصير، ولا أثناء البحث */
+/* كشف الغياب والتأخير بطول ثابت: لا تقفز النافذة بين فصل طويل وفصل قصير */
 .sheet[data-kind="absence"],.sheet[data-kind="late"]{height:min(92vh,780px);height:min(92dvh,780px)}
 .sheet[data-kind="absence"] .sheet-b,.sheet[data-kind="late"] .sheet-b{flex:1}
 
@@ -398,7 +392,6 @@ details.more-box[open]{padding-bottom:12px}
 .roll-list{display:grid;grid-template-columns:minmax(0,1fr)}
 .roll-row{gap:12px;min-height:52px;padding-block:6px}
 .roll-row .no{flex:none;min-width:24px;font-size:13px;font-weight:600;color:var(--ink-3);text-align:center;font-variant-numeric:tabular-nums}
-.roll-row .no.cl{min-width:44px;font-size:13.5px;color:var(--ink-2)}
 .roll-row .nm{flex:1;min-width:0;overflow-wrap:anywhere}
 .roll-row .tg{flex:none;display:flex;align-items:center;gap:8px}
 .roll-row .dot{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:2px solid var(--rule);background:var(--sheet)}

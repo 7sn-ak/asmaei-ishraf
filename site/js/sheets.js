@@ -86,11 +86,11 @@ function closeSheet(){
 function refreshSheet(){
   if (!S.sheet) return;
   if (S.sheet.kind === 'absence') return renderAbsence();
-  if (S.sheet.kind === 'late') return renderLate();
   const body = $('#sheetBody'), ae = document.activeElement;
   if (body && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (S.sheet.kind === 'absview') return renderAbsView();
   if (S.sheet.kind === 'violview') return renderViolView();
+  if (S.sheet.kind === 'late') return renderLate();
   if (S.sheet.kind === 'viol') return renderViolSheet();
   if (S.sheet.kind === 'action') renderActionBody();
 }
@@ -552,7 +552,7 @@ function openAbsence(day){
    التحديد، ثم «التالي» للفصل التالي. */
 // صف الطالب: الرقم، والاسم، ودائرة التحديد. other: ما سُجّل عليه في الخانة الأخرى (فلا يُحدَّد هنا)
 const rollRow = (act, c, s, n, on, kind, other) => `<button class="abs-stu roll-row" data-act="${act}" data-cls="${esc(c)}" data-id="${esc(s.id)}" data-m="${kind}" aria-pressed="${on}"${other ? ' aria-disabled="true"' : ''}>
-    <span class="no${typeof n === 'string' ? ' cl' : ''}">${esc(n)}</span><span class="nm">${esc(s.name)}</span><span class="tg">${on ? mkTag(kind) : other ? mkTag(other) : ''}${other ? '' : `<span class="dot">${icon('check','sm')}</span>`}</span></button>`;
+    <span class="no">${n}</span><span class="nm">${esc(s.name)}</span><span class="tg">${on ? mkTag(kind) : other ? mkTag(other) : ''}${other ? '' : `<span class="dot">${icon('check','sm')}</span>`}</span></button>`;
 // «اليوم، الأربعاء»: قصير فيتسع مع ما سُجّل في سطر واحد، ولا يشتبه بأسماء الفصول مثل 10/14
 const rollDay = d => d === today() ? 'اليوم، ' + fmtDay(d, {weekday:'long'}) : fmtDay(d);
 const rollTop = (kind, sum, chips, prog) => `<div class="roll-top k-${kind}"><div class="roll-sum">${sum}</div>${prog ? '<div class="progress roll-prog"><i></i></div>' : ''}
@@ -696,41 +696,28 @@ function openLate(){
   if (!cl) return toast(myWing() ? 'لم تُضف فصول جناحك بعد.' : 'لم يُحدَّد جناحك بعد.', {bad:true});
   const day = today();
   if (isWeekend(day)) return toast('الجمعة والسبت عطلة.');
-  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, cur:cl[0], q:'', picks:{}, timers:{}, pending:{}, saving:{}};
-  // البحث بالاسم في فصول الجناح كلها: المتأخرون يصلون واحداً واحداً من فصول مختلفة
-  openSheet('late', 'التأخير الصباحي', `<div class="search q-box">${icon('search')}<input id="late-q" type="search" enterkeyhint="search" placeholder="ابحث باسم الطالب" aria-label="ابحث باسم الطالب في فصول جناحك" autocomplete="off" data-in="late-q" value="${esc(LS.q)}">
-      <button type="button" class="q-x" data-act="late-q-x" aria-label="مسح البحث"${LS.q ? '' : ' hidden'}>${icon('x','sm')}</button></div>
-    <div id="late-main" class="sheet-in"></div>`, '<div id="late-foot" class="stack-s"></div>', {day});
+  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, cur:cl[0], picks:{}, timers:{}, pending:{}, saving:{}};
+  openSheet('late', 'التأخير الصباحي', '', '<div id="late-foot" class="stack-s"></div>', {day});
   renderLate();
 }
 const lsPicks = c => LS.picks[c] || (LS.picks[c] = lateIdsOf(LS.day, c));
 const absIds = (day, c) => new Set(((absSheet(day, c) || {}).absent || []).map(a => a.id));
 function renderLate(){
-  const body = $('#sheetBody'), main = $('#late-main'), foot = $('#late-foot');
-  if (!LS || !S.sheet || S.sheet.kind !== 'late' || !body || !main) return;
-  const sc = body.scrollTop, cls = LS.classes, c = LS.cur, total = cls.reduce((k, y) => k + lsPicks(y).size, 0), q = norm(LS.q);
+  const body = $('#sheetBody'), foot = $('#late-foot');
+  if (!LS || !S.sheet || S.sheet.kind !== 'late' || !body) return;
+  const sc = body.scrollTop, cls = LS.classes, c = LS.cur, total = cls.reduce((k, y) => k + lsPicks(y).size, 0);
   const sum = `<span>${esc(rollDay(LS.day))}</span><span class="meta">${total ? total + ' متأخر اليوم' : 'لم يُسجَّل تأخير اليوم'}</span>`;
   if (foot) foot.innerHTML = `<p class="meta">${total ? `اليوم: ${total} متأخر` : 'لم يُسجَّل تأخير اليوم.'} · يُحفظ في سجل الطالب، ولا يُرسل لأحد.</p>`;
-  if (q) {
-    const hits = cls.flatMap(k => { const ab = absIds(LS.day, k), p = lsPicks(k);
-      return rosterOf(k).filter(s => norm(s.name).includes(q)).map(s => rollRow('late-stu', k, s, k, p.has(s.id), 'late', !p.has(s.id) && ab.has(s.id) ? 'absent' : '')); });
-    main.innerHTML = `<div class="roll-top k-late"><div class="roll-sum">${sum}</div></div>
-      <section class="roll"><div class="roll-h"><b>نتائج البحث</b><span class="meta">${hits.length > 40 ? 'أول 40 من ' + hits.length : hits.length ? hits.length + ' طالب في فصول جناحك' : ''}</span></div>
-      ${hits.length ? `<div class="roll-list">${hits.slice(0, 40).join('')}</div>${hits.length > 40 ? '<p class="abs-names meta">اكتب جزءاً أطول من الاسم لتقل النتائج.</p>' : ''}`
-        : '<p class="abs-names meta">لا يوجد طالب بهذا الاسم في فصول جناحك.</p>'}</section>`;
-    body.scrollTop = sc;
-    return;
-  }
   const chips = cls.map(k => { const n = lsPicks(k).size, w = LS.pending[k] || LS.saving[k];
     return `<button type="button" class="chip${w ? ' wait' : ''}" data-act="late-cls" data-cls="${esc(k)}" aria-pressed="${k === c}">${esc(k)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('');
   const p = lsPicks(c), roster = rosterOf(c), ab = absIds(LS.day, c), next = cls[cls.indexOf(c) + 1];
   const st = LS.saving[c] ? 'يُحفظ…' : LS.pending[c] ? 'لم يُحفظ بعد' : '';
-  main.innerHTML = rollTop('late', sum, chips, false) +
+  body.innerHTML = rollTop('late', sum, chips, false) +
     `<section class="roll"><div class="roll-h"><b>${esc(c)}</b><span class="meta">${roster.length} طالب${p.size ? ' · ' + p.size + ' متأخر' : ''}</span><span class="grow"></span>${st ? `<span class="pill tone-mute">${esc(st)}</span>` : ''}</div>
       ${roster.length ? `<div class="roll-list">${roster.map((s, i) => rollRow('late-stu', c, s, i + 1, p.has(s.id), 'late', !p.has(s.id) && ab.has(s.id) ? 'absent' : '')).join('')}</div>`
         : '<p class="abs-names meta">لا يوجد طلاب لهذا الفصل في السجل.</p>'}
       ${next ? `<div class="roll-acts"><button class="btn ghost" data-act="late-next">التالي: ${esc(next)}</button></div>` : ''}</section>
-    <p class="meta">اضغط اسم المتأخر، أو ابحث عنه باسمه. يُحفظ في سجل الطالب مباشرة، ولا يُرسل لأحد.</p>`;
+    <p class="meta">اضغط اسم المتأخر. يُحفظ في سجل الطالب مباشرة، ولا يُرسل لأحد.</p>`;
   body.scrollTop = sc;
 }
 function lateGoto(c){
@@ -931,7 +918,6 @@ document.addEventListener('click', e => {
     case 'late-cls': lateGoto(el.dataset.cls); break;
     case 'late-next': if (LS) lateGoto(LS.classes[LS.classes.indexOf(LS.cur) + 1]); break;
     case 'late-stu': lateToggle(el.dataset.cls, id); break;
-    case 'late-q-x': if (LS) { LS.q = ''; const i = $('#late-q'); if (i) { i.value = ''; i.focus(); } el.hidden = true; renderLate(); } break;
     case 'abs-none': { const c = el.dataset.cls; ABS.picks[c].clear(); queueAbsSave(c, true); if (ABS.cur === c && absNext()) absGoto(absNext()); else renderAbsence(); break; }
     case 'abs-send': absSend(); break;
     case 'abs-unsend': absUnsend(); break;
@@ -1016,7 +1002,6 @@ document.addEventListener('input', e => {
   if (!k) return;
   if (k === 'log-q' || k === 'stu-q') { S.f[k === 'log-q' ? 'log' : 'stu'].q = e.target.value; clearTimeout(inputTimer); inputTimer = setTimeout(update, 140); }
   else if (k === 'r-q') { R.q = e.target.value; R.isNew = false; const n = $('#r-new'); if (n) n.hidden = true; renderRRes(); }
-  else if (k === 'late-q') { if (LS) { LS.q = e.target.value; const x = $('#sheet .q-x'); if (x) x.hidden = !LS.q; renderLate(); } }
   else if (k === 'imp') impSummary();
 });
 document.addEventListener('change', e => {
