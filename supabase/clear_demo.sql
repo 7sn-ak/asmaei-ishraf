@@ -9,10 +9,12 @@ declare
   v_students int;
   v_absence int;
 begin
-  -- أوراق الغياب التجريبية: فيها طالب تجريبي، أو لفصل كل طلابه تجريبيون
+  -- أوراق الغياب التجريبية: فيها طالب تجريبي (غائباً أو متأخراً أو عليه مخالفة)، أو لفصل كل طلابه تجريبيون
   with d as (
     delete from public.absence_sheets a
      where exists (select 1 from jsonb_array_elements(a.absent) e where e->>'id' like 'dd000000-%')
+        or exists (select 1 from jsonb_each(a.marks) m, jsonb_array_elements(case when jsonb_typeof(m.value) = 'array' then m.value else '[]'::jsonb end) e
+                    where e->>'id' like 'dd000000-%')
         or (exists (select 1 from public.students s where s.cls = a.cls and s.id::text like 'dd000000-%')
             and not exists (select 1 from public.students s where s.cls = a.cls and s.id::text not like 'dd000000-%'))
     returning 1

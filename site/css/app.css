@@ -79,7 +79,7 @@ main{max-width:720px;margin-inline:auto;padding-left:max(16px,env(safe-area-inse
 main.bare{padding-block:28px 40px}
 .stack{display:grid;gap:24px}
 .sec{display:grid;gap:10px;min-width:0}
-.sec-h{display:flex;align-items:baseline;gap:8px}
+.sec-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
 .sec-h h2{font-family:var(--f-display);font-weight:700;font-size:18px}
 .sec-h .count{font-size:14px;font-weight:700;color:var(--ink-3);white-space:nowrap}
 .link{color:var(--stamp);font-size:14.5px;font-weight:600;margin-inline-start:auto;padding:6px 0}
@@ -338,6 +338,27 @@ details.more-box[open]{padding-bottom:12px}
 .nl{display:block}
 .abs-none{padding:10px 14px;border-top:1px solid var(--rule)}
 
+/* ما يسجله المشرف الآن فوق الفصول: الغياب، التأخير، الزي، الشعر (يبقى ظاهراً أثناء التمرير) */
+.abs-modes{position:sticky;top:-16px;z-index:2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding-block:8px;margin-block:-8px;background:var(--sheet)}
+.abs-modes button{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px 5px;min-height:46px;padding:4px;border:1.5px solid var(--rule);border-radius:var(--r-s);background:var(--sheet);font-weight:700;font-size:15px;line-height:1.2;color:var(--ink-2)}
+.abs-modes .n{min-width:20px;padding:0 5px;border-radius:999px;background:var(--sunk);font-size:12.5px;font-variant-numeric:tabular-nums}
+.abs-modes .m-absent[aria-pressed="true"]{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
+.abs-modes .m-late[aria-pressed="true"]{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+.abs-modes .m-uniform[aria-pressed="true"]{border-color:var(--info);background:var(--info-bg);color:var(--info)}
+.abs-modes .m-hair[aria-pressed="true"]{border-color:var(--t-report);background:var(--t-report-bg);color:var(--t-report)}
+.abs-modes [aria-pressed="true"] .n{background:var(--sheet)}
+/* علامات الطالب: غائب، متأخر، الزي، الشعر */
+.abs-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;margin-inline-start:auto}
+.row .main .abs-tags{justify-content:flex-start;margin:2px 0 0}
+.mk{display:inline-block;font-size:12.5px;font-weight:700;line-height:1.55;padding:0 7px;border-radius:6px;white-space:nowrap}
+.mk-absent{color:var(--bad);background:var(--bad-bg)} .mk-late{color:var(--warn);background:var(--warn-bg)}
+.mk-uniform{color:var(--info);background:var(--info-bg)} .mk-hair{color:var(--t-report);background:var(--t-report-bg)}
+.abs-stu[aria-pressed="true"][data-m="late"]{background:var(--warn-bg);color:var(--warn)}
+.abs-stu[aria-pressed="true"][data-m="uniform"]{background:var(--info-bg);color:var(--info)}
+.abs-stu[aria-pressed="true"][data-m="hair"]{background:var(--t-report-bg);color:var(--t-report)}
+.abs-stu[aria-pressed="true"] .mk{background:var(--sheet)}
+.nl .mk{margin-inline-start:4px}
+
 .abs-nav{display:grid;gap:8px}
 .abs-nav input,.abs-nav input::-webkit-date-and-time-value{text-align:center}
 
@@ -357,7 +378,7 @@ details.more-box[open]{padding-bottom:12px}
 .pr-sub{font-size:11pt}
 .pr-title{margin-inline-start:auto;text-align:left}
 .pr-title b{display:block;font-size:15pt}
-.pr-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.pr-sum{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:12px}
 .pr-sum div{border:1px solid #000;border-radius:6px;padding:6px 8px;text-align:center}
 .pr-sum span{display:block;font-size:10.5pt}
 .pr-sum b{font-size:16pt;font-variant-numeric:tabular-nums}
@@ -370,6 +391,7 @@ details.more-box[open]{padding-bottom:12px}
 .pr-t tfoot th{background:#f3f3f3}
 .pr-t tr{break-inside:avoid}
 .pr-miss{margin-top:10px;font-size:11pt}
+.pr-h3{font-size:12.5pt;font-weight:700;margin:16px 0 6px}
 .pr-f{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;margin-top:28px;font-size:11.5pt}
 .pr-f .line{border-bottom:1px dotted #000;min-height:22px}
 .pr-printed{grid-column:1/-1;font-size:9.5pt;color:#444}

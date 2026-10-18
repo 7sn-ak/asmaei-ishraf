@@ -24,7 +24,9 @@ const API = (function(){
   const mapLog = r => ({id:r.id, actionId:r.action_id, t:ms(r.at), by:r.by, ev:r.ev, to:r.to_status || '', note:r.note || ''});
   const mapStaff = r => ({id:r.id, name:r.name, username:r.username, role:r.role, isAdmin:!!r.is_admin, active:!!r.active, wingId:r.wing_id || null});
   const mapWing = r => ({id:r.id, name:r.name, sort:r.sort || 0, classes:Array.isArray(r.classes) ? r.classes : []});
-  const mapAbsence = r => ({id:r.id, day:r.day, cls:r.cls, total:r.total || 0, absent:Array.isArray(r.absent) ? r.absent : [], status:r.status,
+  // ما سُجّل مع الغياب: {late:[{id,name}], uniform:[...], hair:[...]}
+  const mapMarks = m => { const o = {}; if (m && typeof m === 'object' && !Array.isArray(m)) for (const k in m) if (Array.isArray(m[k])) o[k] = m[k]; return o; };
+  const mapAbsence = r => ({id:r.id, day:r.day, cls:r.cls, total:r.total || 0, absent:Array.isArray(r.absent) ? r.absent : [], marks:mapMarks(r.marks), status:r.status,
     createdBy:r.created_by, updatedBy:r.updated_by, sentBy:r.sent_by || '', sentAt:ms(r.sent_at), updatedAt:ms(r.updated_at)});
   const mapPrefs = r => r ? {notify:!!r.notify, sound:!!r.sound, types:r.types || {}, lastSeen:ms(r.last_seen)} : null;
 
@@ -54,7 +56,7 @@ const API = (function(){
   }
   const ACTION_COLS = '*';
   const LOG_COLS = 'id,action_id,at,by,ev,to_status,note';
-  const ABS_COLS = 'id,day,cls,total,absent,status,created_by,updated_by,sent_by,sent_at,updated_at';
+  const ABS_COLS = 'id,day,cls,total,absent,marks,status,created_by,updated_by,sent_by,sent_at,updated_at';
   const STAFF_COLS = 'id,name,username,role,is_admin,active,wing_id';
 
   return {
@@ -125,6 +127,8 @@ const API = (function(){
     async setStaffWing(id, wing){ await q(sb.rpc('set_staff_wing', {p_id:id, p_wing:wing || null})); },
     // الغياب اليومي: حفظ فصل (مسودة)، ثم اعتماد الإرسال لشؤون الطلبة، أو إلغاؤه للتعديل
     saveAbsence(day, cls, ids){ return q(sb.rpc('save_absence', {p_day:day, p_cls:cls, p_absent:ids})); },
+    // ورقة الفصل كاملة: الغائبون، وما سُجّل على الحاضرين {late:[ids], uniform:[ids], hair:[ids]}
+    saveDaily(day, cls, ids, marks){ return q(sb.rpc('save_daily', {p_day:day, p_cls:cls, p_absent:ids, p_marks:marks})); },
     sendAbsence(day, classes){ return q(sb.rpc('send_absence', {p_day:day, p_classes:classes})); },
     unsendAbsence(day, classes){ return q(sb.rpc('unsend_absence', {p_day:day, p_classes:classes})); },
     async deleteAction(id){

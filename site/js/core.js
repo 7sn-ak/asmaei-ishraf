@@ -226,6 +226,8 @@ const ERR = {
   too_fast:'انتظر قليلاً ثم جرّب مرة أخرى.',
   not_supervisor:'الأجنحة للمشرفين فقط.',
   weekend:'الجمعة والسبت عطلة، لا يُسجَّل فيهما غياب.',
+  absent_marked:'الطالب مسجّل غائب، فلا يُسجَّل عليه تأخير أو مخالفة.',
+  bad_marks:'تعذّر حفظ الورقة. أغلق النافذة وافتحها من جديد.',
   name_taken:'يوجد جناح بهذا الاسم.',
   bad_endpoint:'هذا المتصفح يستخدم خدمة إشعارات غير معروفة، فلا تصله الإشعارات والموقع مغلق.',
   bad_keys:'تعذر تفعيل الإشعارات على هذا الجهاز.',
@@ -362,7 +364,7 @@ function events(){
 }
 const unread = () => { const ls = prefs().lastSeen || 0; return events().filter(x => (x.e.t || 0) > ls).length; };
 function evText(x){
-  if (x.abs) return {t1:`وصل غياب ${dayLabel(x.abs.day)}: ${absCount(x.abs.sheets)} غائب في ${x.abs.sheets.length} ${x.abs.sheets.length === 1 ? 'فصل' : 'فصول'}`,
+  if (x.abs) return {t1:`وصل غياب ${dayLabel(x.abs.day)}: ${dailyTxt(x.abs.sheets)} في ${x.abs.sheets.length} ${x.abs.sheets.length === 1 ? 'فصل' : 'فصول'}`,
     t2:'اعتمده ' + personName(x.e.by) + ' · ' + x.abs.sheets.map(s => s.cls).sort(clsCmp).join('، ')};
   const a = x.a, e = x.e, who = personName(e.by), n = stuName(a);
   if (e.ev === 'created') {
@@ -424,6 +426,33 @@ document.addEventListener('pointerdown', () => {
 const absList = () => Object.values(S.absence);
 const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
 const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
+// ما يُسجَّل مع الغياب في ورقة الفصل: التأخير الصباحي ومخالفات الزي والشعر. الأنواع نفسها في private.mark_kinds()
+// في قاعدة البيانات؛ لإضافة نوع أضفه هنا وهناك.
+const MARKS = {
+  late:{l:'متأخر', mode:'التأخير', g:'التأخير الصباحي'},
+  uniform:{l:'الزي', mode:'الزي', g:'مخالفة الزي'},
+  hair:{l:'الشعر', mode:'الشعر', g:'مخالفة الشعر'}
+};
+const MARK_KEYS = Object.keys(MARKS), VIOL_KEYS = MARK_KEYS.filter(k => k !== 'late');
+const marksOf = (x, k) => (x && x.marks && Array.isArray(x.marks[k])) ? x.marks[k] : [];
+const lateCount = sheets => sheets.reduce((n, x) => n + marksOf(x, 'late').length, 0);
+const violCount = sheets => sheets.reduce((n, x) => n + VIOL_KEYS.reduce((m, k) => m + marksOf(x, k).length, 0), 0);
+const violTxt = n => n + (n >= 2 && n <= 10 ? ' مخالفات' : ' مخالفة');
+// «3 غائب · 2 متأخر · 1 مخالفة»: التأخير والمخالفات إن وُجدت
+const countsTxt = (a, l, v) => [a + ' غائب', l ? l + ' متأخر' : '', v ? violTxt(v) : ''].filter(Boolean).join(' · ');
+const dailyTxt = sheets => countsTxt(absCount(sheets), lateCount(sheets), violCount(sheets));
+const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : `<span class="mk mk-${k}">${esc(MARKS[k].l)}</span>`;
+// طلاب الورقة مع ما سُجّل على كل واحد: الغائبون أولاً، ثم المتأخرون، ثم المخالفات
+function sheetPeople(x){
+  const by = new Map(), add = (a, k) => { const p = by.get(a.id) || {id:a.id, name:a.name, kinds:[]}; p.kinds.push(k); by.set(a.id, p); };
+  x.absent.forEach(a => add(a, 'absent'));
+  MARK_KEYS.forEach(k => marksOf(x, k).forEach(a => add(a, k)));
+  const rank = p => p.kinds.includes('absent') ? 0 : p.kinds.includes('late') ? 1 : 2;
+  return Array.from(by.values()).sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name), 'ar'));
+}
+// سطر لكل طالب: الغائب باسمه، والمتأخر وصاحب المخالفة مع ما سُجّل عليه
+const peopleLines = (x, empty) => { const ps = sheetPeople(x);
+  return ps.length ? ps.map(p => `<span class="nl">${esc(p.name)}${p.kinds.filter(k => k !== 'absent').map(k => ' ' + mkTag(k)).join('')}</span>`).join('') : esc(empty); };
 // أسماء الغائبين تحت بعض: سطر لكل اسم
 const nameLines = (list, empty) => list.length ? list.map(a => `<span class="nl">${esc(a.name)}</span>`).join('') : esc(empty);
 const rosterOf = cls => M().students.filter(s => s.cls === cls);
