@@ -83,6 +83,7 @@ main.bare{padding-block:28px 40px}
 .sec-h h2{font-family:var(--f-display);font-weight:700;font-size:18px}
 .sec-h .count{font-size:14px;font-weight:700;color:var(--ink-3);white-space:nowrap}
 .link{color:var(--stamp);font-size:14.5px;font-weight:600;margin-inline-start:auto;padding:6px 0}
+.link.inl{margin-inline-start:4px;padding:2px 0}
 .page-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .page-h h1{font-family:var(--f-display);font-weight:700;font-size:24px}
 .loading{padding:48px 0;text-align:center;color:var(--ink-3)}
@@ -399,7 +400,6 @@ details.more-box[open]{padding-bottom:12px}
 .roll-row[aria-pressed="true"] .dot{border-color:currentColor;background:currentColor}
 .roll-row[aria-pressed="true"] .dot .ic{opacity:1;color:var(--sheet)}
 .roll-row[aria-pressed="true"] .no{color:inherit}
-.roll-row[aria-disabled="true"]{color:var(--ink-3)}
 .roll-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--rule)}
 .roll-acts .btn{flex:1 1 150px}
 .roll-acts .meta{flex-basis:100%}

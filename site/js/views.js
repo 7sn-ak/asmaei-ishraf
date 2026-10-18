@@ -123,7 +123,9 @@ function violCard(){
    سجل الطالب ولا يُرسل لأحد. ثم ملخص شؤون الطلبة (absenceToday) */
 function absenceCard(){
   const cl = myClasses(), w = myWing(), t = today();
-  const head = `<div class="sec-h"><h2>الغياب والتأخير</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
+  // إحصائية غياب الجناح لأي يوم وطباعتها (في العطلة: آخر يوم دوام)
+  const stat = cl ? `<button class="link" data-act="open-absence" data-day="${isWeekend(t) ? shiftSchoolDay(t, -1) : t}">إحصائية الغياب</button>` : '';
+  const head = `<div class="sec-h"><h2>الغياب والتأخير</h2><span class="meta">${esc(dayLabel(t))}</span>${stat}</div>`;
   if (!cl) {
     const btn = !w && canAdmin() ? `<button class="btn sm primary" data-act="staff-open" data-id="${esc(S.uid)}">تحديد جناحي</button>`
       : w && canWings() ? `<button class="btn sm primary" data-act="wing-open" data-id="${w.id}">إضافة الفصول</button>` : '';
