@@ -144,6 +144,9 @@ button.row:active,.row.tap:active{background:var(--sunk)}
 @media (max-width:460px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* سجل الطالب: الإجراءات الأربعة والتأخير. في الجوال: عمودان، والتأخير بعرض السطر */
 .stats.five{grid-template-columns:repeat(5,minmax(0,1fr))}
+.stats.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:460px){.stats.three .stat{padding:8px 10px}.stats.three .stat .lb{font-size:13px;line-height:1.35}.stats.three .stat .lb::before{display:none}}
+.ty-soon{--c:var(--info);--cb:var(--info-bg)}
 @media (max-width:560px){.stats.five{grid-template-columns:repeat(2,minmax(0,1fr))}.stats.five>:last-child{grid-column:1/-1}}
 .stat{display:grid;gap:2px;text-align:start;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-m);padding:10px 12px}
 .stat .lb{display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:600;color:var(--c)}
@@ -403,6 +406,7 @@ details.more-box[open]{padding-bottom:12px}
 .roll-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--rule)}
 .roll-acts .btn{flex:1 1 150px}
 .roll-acts .meta{flex-basis:100%}
+.roll-by{padding:0 14px 12px}
 .roll-ok{flex:1 1 150px;display:inline-flex;align-items:center;gap:6px;min-height:46px;font-weight:700;color:var(--ok)}
 
 /* الغياب والتأخير في رئيسية المشرف: خانتان منفصلتان جنباً إلى جنب */
@@ -410,8 +414,9 @@ details.more-box[open]{padding-bottom:12px}
 .box{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;padding:12px;text-align:start;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-m)}
 .box:active{background:var(--sunk)}
 .box.k-absent{--c:var(--bad)} .box.k-late{--c:var(--warn)}
-.box .lb{display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:700;color:var(--c)}
-.box .lb::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
+.box.k-suspend{--c:var(--t-suspend)} .box.k-summon{--c:var(--t-summon)}
+.box .lb{display:flex;align-items:flex-start;gap:6px;font-size:14.5px;font-weight:700;line-height:1.6;color:var(--c)}
+.box .lb::before{content:"";flex:none;width:8px;height:8px;margin-top:7.5px;border-radius:50%;background:currentColor}
 .box b{font-size:21px;line-height:1.35;font-weight:700;font-variant-numeric:tabular-nums}
 .box b.none{font-size:16px;line-height:1.6;font-weight:600;color:var(--ink-3)}
 .box small{font-size:13px;line-height:1.5;color:var(--ink-2);padding-bottom:8px}
@@ -429,11 +434,12 @@ details.more-box[open]{padding-bottom:12px}
 .pr{font-family:var(--f-body);color:#000;font-size:12.5pt;line-height:1.5;direction:rtl;padding:0 2px}
 .pr-h{display:flex;align-items:center;gap:14px;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:12px}
 .pr-logo{width:64px;height:64px;object-fit:contain}
-.pr-school{font-size:15pt;font-weight:700}
+.pr-school{font-size:15pt;font-weight:700;white-space:nowrap}
 .pr-sub{font-size:11pt}
 .pr-title{margin-inline-start:auto;text-align:left}
 .pr-title b{display:block;font-size:15pt}
 .pr-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.pr-sum.three{grid-template-columns:repeat(3,1fr)}
 .pr-sum div{border:1px solid #000;border-radius:6px;padding:6px 8px;text-align:center}
 .pr-sum span{display:block;font-size:10.5pt}
 .pr-sum b{font-size:16pt;font-variant-numeric:tabular-nums}
@@ -441,6 +447,9 @@ details.more-box[open]{padding-bottom:12px}
 .pr-t th,.pr-t td{border:1px solid #000;padding:5px 6px;text-align:center;vertical-align:top}
 .pr-t th{background:#e9e9e9}
 .pr-t td.names{text-align:right;width:42%}
+.pr-t td.l{text-align:right}
+.pr-t td.nm{text-align:right;width:27%}
+.pr-t td.n{white-space:nowrap}
 .pr-t td.names ol{margin:0;padding-inline-start:1.6em}
 .pr-t td.names li{padding-block:1px;padding-inline-start:2px}
 .pr-t tfoot th{background:#f3f3f3}

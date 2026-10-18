@@ -161,6 +161,24 @@ const activeSusp = sid => (M().byStu[sid] || []).find(suspNow);
 const schoolDayNo = (from, d) => { if (!from || isWeekend(d) || d < from) return 0; let n = 0, x = from, g = 0; while (x <= d && g++ < 90) { if (!isWeekend(x)) n++; x = addDays(x, 1); } return n; };
 // استدعاء ينتظر حضور ولي الأمر حتى يوم معيّن (اليوم إن لم يُحدَّد): موعده فيه، أو فات ولم يُسجَّل الحضور
 const summonDue = (a, d) => a.type === 'summon' && a.status === 'scheduled' && !!a.summonDate && a.summonDate <= (d || today());
+/* إحصائية المفصولين والاستدعاءات (المشرف العام والوكيل والمدير، كل الفصول): المفصولون الآن، واستدعاءات لم يحضر فيها
+   ولي الأمر حتى الآن: فات موعدها ولم يُسجَّل حضوره، أو سُجّل «لم يحضر»، أو موعدها اليوم. والمواعيد القادمة وحدها. */
+const canDisc = () => OVERSEERS.includes(myRole());
+const daysSince = d => Math.max(0, Math.round((parseYmd(today()) - parseYmd(d)) / 864e5));
+const agoTxt = n => n === 0 ? 'اليوم' : n === 1 ? 'منذ يوم' : n === 2 ? 'منذ يومين' : n <= 10 ? `منذ ${n} أيام` : `منذ ${n} يوماً`;
+function discData(){
+  const t = today(), list = M().list, seen = new Set();
+  const byEnd = (a, b) => a.suspendTo.localeCompare(b.suspendTo) || clsCmp(stuCls(a), stuCls(b)) || stuName(a).localeCompare(stuName(b), 'ar');
+  const susp = list.filter(suspNow).sort(byEnd).filter(a => !seen.has(a.studentId) && seen.add(a.studentId));
+  const when = a => (a.summonDate || '9999') + ' ' + (a.summonTime || '');
+  const by = (a, b) => when(a).localeCompare(when(b)) || clsCmp(stuCls(a), stuCls(b)) || stuName(a).localeCompare(stuName(b), 'ar');
+  const sm = list.filter(a => a.type === 'summon' && (a.status === 'scheduled' || a.status === 'absent')).sort(by);
+  const late = sm.filter(a => a.status === 'scheduled' && a.summonDate && a.summonDate < t);
+  const absent = sm.filter(a => a.status === 'absent');
+  const now = sm.filter(a => a.status === 'scheduled' && a.summonDate === t);
+  const soon = sm.filter(a => a.status === 'scheduled' && !(a.summonDate && a.summonDate <= t));
+  return {t, susp, late, absent, now, soon, due:late.length + absent.length + now.length};
+}
 const stInfo = a => ((STATUS[a.type] || {})[a.status]) || {l:a.status || '', tone:'mute'};
 const pill = a => {
   if (a.type === 'report') return '';
@@ -449,6 +467,8 @@ const VIOL_KEYS = Object.keys(VIOLS);
 const marksOf = (x, k) => (x && x.marks && Array.isArray(x.marks[k])) ? x.marks[k] : [];
 const violTxt = n => n + (n >= 2 && n <= 10 ? ' مخالفات' : ' مخالفة');
 const dailyTxt = sheets => absCount(sheets) + ' غائب';
+// من اعتمد أوراق الغياب (أنت، أو اسم الزميل، أو أكثر من اسم)
+const sentByTxt = sheets => Array.from(new Set(sheets.map(x => x.sentBy).filter(Boolean))).map(id => id === S.uid ? 'أنت' : personName(id)).join('، ') || 'زميل';
 const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>' : k === 'late' ? '<span class="mk mk-late">متأخر</span>'
   : `<span class="mk mk-${k}">${esc((VIOLS[k] || {}).l || '')}</span>`;
 /* ===== التأخير الصباحي: خانة منفصلة عن الغياب، يُحفظ في سجل الطالب ولا يُرسل لأحد ===== */

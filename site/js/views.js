@@ -110,6 +110,19 @@ function todayCard(){
     `<div class="list">${html || `<p class="calm">لا يوجد طالب مفصول ولا استدعاء لولي أمر ولا مخالفة ${esc(dl)}.</p>`}</div>`;
 }
 
+/* المفصولون والاستدعاءات في رئيسية المشرف العام والوكيل والمدير: العدد الآن، والإحصائية وطباعتها */
+function discCard(){
+  if (!canDisc()) return '';
+  const d = discData(), n = d.susp.length;
+  const box = (sec, kind, label, v, sub) => `<button class="box k-${kind}" data-act="disc-open" data-sec="${sec}"><span class="lb">${label}</span>
+      <b${v ? '' : ' class="none"'}>${esc(v || 'لا يوجد')}</b><small>${sub.map(x => `<span class="nl">${esc(x)}</span>`).join('')}</small><span class="btn sm ghost">التفاصيل</span></button>`;
+  const ml = [d.late.length ? `فات موعدها ${d.late.length}` : '', d.absent.length ? `لم يحضر ${d.absent.length}` : '', d.now.length ? `موعدها اليوم ${d.now.length}` : '',
+    d.soon.length ? `مواعيد قادمة ${d.soon.length}` : ''].filter(Boolean);
+  return `<div class="sec-h"><h2>المفصولون والاستدعاءات</h2><span class="meta">كل الفصول</span><button class="link" data-act="disc-open">الإحصائية والطباعة</button></div>
+    <div class="duo">${box('susp', 'suspend', 'مفصولون الآن', n ? n + ' طالب' : '', [n ? 'لا يحضرون إلى المدرسة' : 'لا يوجد طالب مفصول الآن'])}${
+      box('sum', 'summon', 'لم يحضر ولي الأمر', d.due ? d.due + ' استدعاء' : '', ml.length ? ml : ['لا يوجد استدعاء ينتظر حضور ولي الأمر'])}</div>`;
+}
+
 /* مخالفات الزي والشعر في رئيسية المشرف العام: عدد اليوم، وزر التسجيل */
 function violCard(){
   const t = today(), head = `<div class="sec-h"><h2>مخالفات الزي والشعر</h2><span class="meta">${esc(dayLabel(t))}</span></div>`;
@@ -140,9 +153,11 @@ function absenceCard(){
   const sent = sheets.filter(x => x.status === 'sent'), drafts = sheets.filter(x => x.status === 'draft');
   const done = sheets.length === cl.length && !drafts.length, n = absCount(sheets);
   const of = `سُجّل ${sheets.length} من ${cl.length} ${cl.length === 1 ? 'فصل' : 'فصول'}`;
+  // اعتماد مشرف واحد يكفي للجناح: يظهر لزميله من اعتمده، فلا يسجله مرة أخرى
+  const by = sent.length ? ['اعتمده ' + sentByTxt(sent)] : [];
   const ab = !sheets.length ? ['', ['يصل لشؤون الطلبة بعد اعتمادك'], 'تسجيل الغياب', true]
-    : done ? [n ? n + ' غائب' : 'لا غياب', ['أُرسل لشؤون الطلبة ' + fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))], 'عرض', false]
-    : [n ? n + ' غائب' : 'لا غياب', [of].concat(drafts.length ? ['لم يُعتمد بعد'] : []), 'إكمال واعتماد', true];
+    : done ? [n ? n + ' غائب' : 'لا غياب', ['أُرسل لشؤون الطلبة ' + fmtTime(Math.max.apply(null, sent.map(x => x.sentAt)))].concat(by), 'عرض', false]
+    : [n ? n + ' غائب' : 'لا غياب', [of].concat(drafts.length ? ['لم يُعتمد بعد'] : [], by), 'إكمال واعتماد', true];
   const ln = cl.reduce((k, c) => k + lateIdsOf(t, c).size, 0);
   // [الرقم، أسطر الشرح، الزر، الزر الرئيسي]
   const box = (act, kind, label, [v, sub, go, main]) => `<button class="box k-${kind}" data-act="${act}"><span class="lb">${label}</span>
@@ -214,6 +229,7 @@ const VIEWS = {
         <section class="hello" id="h-hello"></section>
         <div id="h-banner" class="stack"></div>
         <section class="sec" id="h-today" hidden></section>
+        <section class="sec" id="h-disc" hidden></section>
         <section class="sec" id="h-abs" hidden></section>
         <section class="sec" id="h-attn"></section>
         <section class="sec" id="h-week"></section>
@@ -231,6 +247,8 @@ const VIEWS = {
       const hb = $('#h-banner', el); hb.innerHTML = b; hb.hidden = !b;
       const ht = $('#h-today', el), td = todayCard();
       ht.innerHTML = td; ht.hidden = !td;
+      const hd = $('#h-disc', el), dc = discCard();
+      hd.innerHTML = dc; hd.hidden = !dc;
       const ha = $('#h-abs', el), abs = myRole() === 'supervisor' ? absenceCard() : contactDuty() ? absenceToday() : canViol() ? violCard() : '';
       ha.innerHTML = abs; ha.hidden = !abs;
       $('#h-attn', el).innerHTML = attention();
