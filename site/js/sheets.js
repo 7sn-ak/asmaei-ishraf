@@ -532,6 +532,15 @@ async function openDeleted(){
   }).join('')}</div>` : '<p class="calm">لم يُحذف أي شيء.</p>';
 }
 /* --- الغياب اليومي --- */
+// رفض نهائي من الخادم (لا يفيد إعادته): ما عداه (انقطاع الإنترنت مثلاً) يبقى ويُعاد حفظه
+const REFUSED = ['already_sent', 'weekend', 'bad_day', 'bad_class', 'bad_marks', 'student_not_in_class', 'absent_marked', 'not_allowed', 'not_staff'];
+const refused = e => REFUSED.includes(String((e && e.message) || ''));
+// عاد الاتصال: يُحفظ ما بقي من تعديلات الغياب والتأخير والمخالفات
+window.addEventListener('online', () => {
+  if (ABS) Object.keys(ABS.pending).forEach(c => saveAbsClass(c));
+  if (LS) Object.keys(LS.pending).forEach(c => saveLateClass(c));
+  if (VS) Object.keys(VS.pending).forEach(c => saveViolClass(c));
+});
 // حالة الغياب المفتوح للتعديل: تبقى بعد إغلاق النافذة حتى يكتمل الحفظ التلقائي
 let ABS = null;
 function openAbsence(day){
@@ -541,9 +550,10 @@ function openAbsence(day){
   day = day || today();
   if (isWeekend(day)) return toast(ERR.weekend);
   if (!ABS || ABS.day !== day || ABS.classes.join('|') !== cl.join('|')) {
-    const picks = {};
-    cl.forEach(c => { const x = absSheet(day, c); picks[c] = new Set(x ? x.absent.map(a => a.id) : []); });
-    ABS = {day, classes:cl, picks, cur:cl.find(c => !absSheet(day, c)) || cl[0], timers:{}, pending:{}, saving:{}};
+    const picks = {}, base = {};
+    cl.forEach(c => { const x = absSheet(day, c); picks[c] = new Set(x ? x.absent.map(a => a.id) : []); base[c] = x ? x.updatedAt || 0 : 0; });
+    // run: حفظ جارٍ لكل فصل · base: آخر نسخة من الخادم بُنيت عليها الأسماء · bad: آخر حفظ تعذّر ويُعاد
+    ABS = {day, classes:cl, picks, base, cur:cl.find(c => !absSheet(day, c)) || cl[0], timers:{}, pending:{}, saving:{}, run:{}, bad:{}, force:{}, sending:false};
   }
   openSheet('absence', 'الغياب اليومي', '', '<div id="abs-foot" class="stack-s"></div>', {day});
   renderAbsence();
@@ -566,9 +576,22 @@ function absState(c){
   if (x) return {l:'محفوظ، لم يُعتمد', tone:'info', cls:'done'};
   return {l:'لم يُسجَّل', tone:'mute', cls:''};
 }
+/* نسخة الخادم: الفصل المرسَل يُعرض كما وصل لشؤون الطلبة، وما غيّره زميل بعد آخر حفظ لي يظهر عندي،
+   ما دام الفصل بلا تعديل عندي لم يُحفظ (فلا أحفظ فوق تعديله نسخة قديمة) */
+function absAdopt(){
+  for (const c of ABS.classes) {
+    if (ABS.pending[c] || ABS.saving[c]) continue;
+    const x = absSheet(ABS.day, c), at = x ? x.updatedAt || 0 : 0, newer = at > (ABS.base[c] || 0);
+    if (newer) ABS.base[c] = at;
+    if (ABS.force[c] || (x && (x.status === 'sent' || (newer && x.updatedBy !== S.uid)))) {
+      ABS.picks[c] = new Set(x ? x.absent.map(a => a.id) : []); delete ABS.force[c];
+    }
+  }
+}
 function renderAbsence(){
   const body = $('#sheetBody'), foot = $('#abs-foot');
   if (!ABS || !S.sheet || S.sheet.kind !== 'absence' || !body) return;
+  absAdopt();
   const sc = body.scrollTop, cls = ABS.classes, c = ABS.cur;
   const isRec = k => !!(absSheet(ABS.day, k) || ABS.pending[k] || ABS.saving[k]);
   const recorded = cls.filter(isRec).length;
@@ -596,8 +619,8 @@ function renderAbsence(){
   const drafts = xs.filter(y => y.status === 'draft'), sentAll = xs.filter(y => y.status === 'sent');
   const missing = cls.filter(k => !absSheet(ABS.day, k) && !ABS.pending[k]);
   const n = cls.reduce((k, y) => k + ABS.picks[y].size, 0), waiting = Object.keys(ABS.pending).length + Object.keys(ABS.saving).length;
-  if (drafts.length || waiting) foot.innerHTML = `<p class="meta">المجموع: ${n} غائب${missing.length ? ' · لم يُسجَّل بعد: ' + esc(missing.join('، ')) : ''}</p>` +
-    `<button class="btn primary block" data-act="abs-send">اعتماد وإرسال لشؤون الطلبة</button>`;
+  if (drafts.length || waiting || ABS.sending) foot.innerHTML = `<p class="meta">المجموع: ${n} غائب${missing.length ? ' · لم يُسجَّل بعد: ' + esc(missing.join('، ')) : ''}</p>` +
+    (ABS.sending ? `<button class="btn primary block" disabled>جارٍ الحفظ والاعتماد…</button>` : `<button class="btn primary block" data-act="abs-send">اعتماد وإرسال لشؤون الطلبة</button>`);
   else if (sentAll.length) foot.innerHTML = `<p class="meta">أُرسل لشؤون الطلبة ${esc(fmtTime(Math.max.apply(null, sentAll.map(y => y.sentAt))))}${missing.length ? ' · لم يُسجَّل: ' + esc(missing.join('، ')) : ''}.
       <button class="link inl" data-act="open-absence" data-day="${esc(ABS.day)}">الإحصائية والطباعة</button></p>
     <button class="btn ghost block" data-act="abs-unsend" data-confirm="اضغط مرة أخرى لإلغاء الإرسال">إلغاء الإرسال للتعديل</button>`;
@@ -611,6 +634,7 @@ function absGoto(c){
 }
 const absNext = () => ABS && ABS.classes[ABS.classes.indexOf(ABS.cur) + 1];
 function absToggle(c, id){
+  if (ABS.sending) return;   // أثناء الاعتماد
   const x = absSheet(ABS.day, c);
   if (x && x.status === 'sent') return toast(ERR.already_sent, {bad:true});
   const set = ABS.picks[c];
@@ -624,21 +648,35 @@ function queueAbsSave(c, now){
 async function refreshAbsence(day){
   try { (await API.absenceFor(day)).forEach(x => { S.absence[x.id] = x; }); S.ver++; schedule(); } catch(e) {}
 }
+// حفظ فصل: طلب واحد في كل مرة لكل فصل، وما تغيّر أثناءه يُحفظ بعده، فلا يسبق حفظٌ قديم حفظاً أحدث
 async function saveAbsClass(c){
-  const st = ABS; if (!st || !st.pending[c]) return true;
+  const st = ABS; if (!st) return true;
+  while (st.run[c]) await st.run[c];
+  if (!st.pending[c]) return !st.bad[c];
   clearTimeout(st.timers[c]); delete st.pending[c]; st.saving[c] = true; renderAbsence();
-  const ok = await save(() => API.saveDaily(st.day, c, Array.from(st.picks[c]), {}));
-  delete st.saving[c];
-  if (!ok) st.pending[c] = true;
+  let err = null;
+  const run = st.run[c] = API.saveDaily(st.day, c, Array.from(st.picks[c]), {}).then(() => {}, e => { err = e; });
+  await run;
+  delete st.run[c]; delete st.saving[c];
+  if (err) {
+    console.error(err); toast(c + ': ' + errText(err), {bad:true});
+    // رفضه الخادم (مثلاً أُرسل الفصل من جهاز آخر): تُعرض نسخة الخادم. انقطاع: يُعاد مع الاعتماد أو عودة الاتصال
+    if (refused(err)) { delete st.bad[c]; st.force[c] = true; } else { st.pending[c] = true; st.bad[c] = true; }
+  } else delete st.bad[c];
   await refreshAbsence(st.day); renderAbsence();
-  return !!ok;
+  return !err;
 }
+// الاعتماد: ضغطة واحدة تكفي (ما بعدها يُتجاهل)، وينتظر كل حفظ جارٍ أو مؤجل فيصل لشؤون الطلبة آخر ما اخترته
 async function absSend(){
-  for (const c of Object.keys(ABS.pending)) if (!await saveAbsClass(c)) return;
-  const n = await save(() => API.sendAbsence(ABS.day, ABS.classes));
-  if (n === false) return;
-  await refreshAbsence(ABS.day);
-  toast('اعتُمد الغياب وأُرسل لشؤون الطلبة'); renderAbsence();
+  const st = ABS; if (!st || st.sending) return;
+  st.sending = true; renderAbsence();
+  try {
+    for (const c of st.classes) if (!await saveAbsClass(c)) return;
+    const n = await save(() => API.sendAbsence(st.day, st.classes));
+    if (n === false) return;
+    await refreshAbsence(st.day);
+    toast('اعتُمد الغياب وأُرسل لشؤون الطلبة');
+  } finally { st.sending = false; renderAbsence(); }
 }
 async function absUnsend(){
   if (await save(() => API.unsendAbsence(ABS.day, ABS.classes)) === false) return;
@@ -704,15 +742,27 @@ function openLate(){
   if (!cl) return toast(myWing() ? 'لم تُضف فصول جناحك بعد.' : 'لم يُحدَّد جناحك بعد.', {bad:true});
   const day = today();
   if (isWeekend(day)) return toast('الجمعة والسبت عطلة.');
-  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, cur:cl[0], picks:{}, timers:{}, pending:{}, saving:{}};
+  if (!LS || LS.day !== day || LS.classes.join('|') !== cl.join('|')) LS = {day, classes:cl, cur:cl[0], picks:{}, base:{}, timers:{}, pending:{}, saving:{}, run:{}};
   openSheet('late', 'التأخير الصباحي', '', '<div id="late-foot" class="stack-s"></div>', {day});
   renderLate();
 }
-const lsPicks = c => LS.picks[c] || (LS.picks[c] = lateIdsOf(LS.day, c));
+function lsPicks(c){
+  if (!LS.picks[c]) { const x = lateSheet(LS.day, c); LS.picks[c] = lateIdsOf(LS.day, c); LS.base[c] = x ? x.updatedAt || 0 : 0; }
+  return LS.picks[c];
+}
+// ما سجّله زميل بعد آخر حفظ لي يظهر عندي، ما دام الفصل بلا تعديل عندي لم يُحفظ
+function lateAdopt(){
+  for (const c of LS.classes) {
+    if (LS.pending[c] || LS.saving[c] || !LS.picks[c]) continue;
+    const x = lateSheet(LS.day, c), at = x ? x.updatedAt || 0 : 0;
+    if (at > (LS.base[c] || 0)) { LS.base[c] = at; if (x.updatedBy !== S.uid) LS.picks[c] = lateIdsOf(LS.day, c); }
+  }
+}
 const absIds = (day, c) => new Set(((absSheet(day, c) || {}).absent || []).map(a => a.id));
 function renderLate(){
   const body = $('#sheetBody'), foot = $('#late-foot');
   if (!LS || !S.sheet || S.sheet.kind !== 'late' || !body) return;
+  lateAdopt();
   const sc = body.scrollTop, cls = LS.classes, c = LS.cur, total = cls.reduce((k, y) => k + lsPicks(y).size, 0);
   const sum = `<span>${esc(rollDay(LS.day))}</span><span class="meta">${total ? total + ' متأخر اليوم' : 'لم يُسجَّل تأخير اليوم'}</span>`;
   if (foot) foot.innerHTML = `<p class="meta">${total ? `اليوم: ${total} متأخر` : 'لم يُسجَّل تأخير اليوم.'} · يُحفظ في سجل الطالب، ولا يُرسل لأحد.</p>`;
@@ -744,15 +794,20 @@ function lateToggle(c, id){
 async function refreshLate(day){
   try { (await API.lateFor(day)).forEach(x => { S.late[x.id] = x; }); S.ver++; schedule(); } catch(e) {}
 }
+// طلب واحد في كل مرة لكل فصل، وما تغيّر أثناءه يُحفظ بعده
 async function saveLateClass(c){
-  const st = LS; if (!st || !st.pending[c]) return true;
+  const st = LS; if (!st) return true;
+  while (st.run[c]) await st.run[c];
+  if (!st.pending[c]) return true;
   clearTimeout(st.timers[c]); delete st.pending[c]; st.saving[c] = true; renderLate();
-  const ok = await save(() => API.saveLate(st.day, c, Array.from(st.picks[c])));
-  delete st.saving[c];
-  // بلا اتصال يُعاد الحفظ مع التغيير التالي، وإن رفضه الخادم يرجع الفصل إلى ما حُفظ
-  if (!ok) { if (navigator.onLine === false) st.pending[c] = true; else delete st.picks[c]; }
+  let err = null;
+  const run = st.run[c] = API.saveLate(st.day, c, Array.from(st.picks[c])).then(() => {}, e => { err = e; });
+  await run;
+  delete st.run[c]; delete st.saving[c];
+  // انقطاع: يُعاد مع التغيير التالي أو عودة الاتصال. رفضه الخادم: يرجع الفصل إلى ما حُفظ
+  if (err) { console.error(err); toast(errText(err), {bad:true}); if (refused(err)) delete st.picks[c]; else st.pending[c] = true; }
   await refreshLate(st.day); renderLate();
-  return !!ok;
+  return !err;
 }
 
 /* --- مخالفات الزي والشعر: يسجلها المشرف العام، ويصل إشعارها لمشرف جناح الفصل فقط --- */
@@ -761,20 +816,30 @@ function openViolations(){
   if (!canViol()) return toast('مخالفات الزي والشعر يسجلها المشرف العام.', {bad:true});
   const day = today();
   if (isWeekend(day)) return toast('الجمعة والسبت عطلة.');
-  if (!VS || VS.day !== day) VS = {day, cls:null, mode:'uniform', picks:{}, timers:{}, pending:{}, saving:{}};
+  if (!VS || VS.day !== day) VS = {day, cls:null, mode:'uniform', picks:{}, base:{}, timers:{}, pending:{}, saving:{}, run:{}};
   openSheet('viol', 'مخالفات الزي والشعر', '', '<div id="vs-foot" class="stack-s"></div>', {day});
   renderViolSheet();
 }
 // ما اختاره المشرف العام في كل فصل (من الخادم أول مرة)
 function vsPicks(c){
-  if (!VS.picks[c]) { const x = violSheet(VS.day, c); VS.picks[c] = {}; VIOL_KEYS.forEach(k => { VS.picks[c][k] = new Set(marksOf(x, k).map(a => a.id)); }); }
+  if (!VS.picks[c]) { const x = violSheet(VS.day, c); VS.picks[c] = {}; VIOL_KEYS.forEach(k => { VS.picks[c][k] = new Set(marksOf(x, k).map(a => a.id)); }); VS.base[c] = x ? x.updatedAt || 0 : 0; }
   return VS.picks[c];
+}
+// ما غيّره غيري بعد آخر حفظ لي يظهر عندي، ما دام الفصل بلا تعديل عندي لم يُحفظ
+function violAdopt(){
+  for (const c of Object.keys(VS.picks)) {
+    if (VS.pending[c] || VS.saving[c]) continue;
+    const x = violSheet(VS.day, c), at = x ? x.updatedAt || 0 : 0;
+    if (at > (VS.base[c] || 0) && x.updatedBy !== S.uid) delete VS.picks[c];
+    else if (at > (VS.base[c] || 0)) VS.base[c] = at;
+  }
 }
 const vsCount = c => VS.picks[c] ? VIOL_KEYS.reduce((n, k) => n + VS.picks[c][k].size, 0) : violCountOf(violSheet(VS.day, c));
 const vsKind = (c, k) => VS.picks[c] ? VS.picks[c][k].size : marksOf(violSheet(VS.day, c), k).length;
 function renderViolSheet(){
   const body = $('#sheetBody'), foot = $('#vs-foot');
   if (!VS || !S.sheet || S.sheet.kind !== 'viol' || !body) return;
+  violAdopt();
   const sc = body.scrollTop, classes = M().classes;
   const modes = `<div class="abs-modes" role="group" aria-label="المخالفة">${VIOL_KEYS.map(k => { const n = classes.reduce((s, c) => s + vsKind(c, k), 0);
     return `<button type="button" class="m-${k}" data-act="vs-mode" data-m="${k}" aria-pressed="${VS.mode === k}">${esc(VIOLS[k].l)}${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>`;
@@ -811,16 +876,21 @@ function vsToggle(c, id){
 async function refreshViolations(day){
   try { (await API.violationsFor(day)).forEach(x => { S.violations[x.id] = x; }); S.ver++; schedule(); } catch(e) {}
 }
+// طلب واحد في كل مرة لكل فصل، وما تغيّر أثناءه يُحفظ بعده
 async function saveViolClass(c){
-  const st = VS; if (!st || !st.pending[c]) return true;
+  const st = VS; if (!st) return true;
+  while (st.run[c]) await st.run[c];
+  if (!st.pending[c]) return true;
   clearTimeout(st.timers[c]); delete st.pending[c]; st.saving[c] = true; renderViolSheet();
   const marks = {}; VIOL_KEYS.forEach(k => { marks[k] = Array.from(st.picks[c][k]); });
-  const ok = await save(() => API.saveViolations(st.day, c, marks));
-  delete st.saving[c];
-  // بلا اتصال يُعاد الحفظ مع التغيير التالي، وإن رفضه الخادم يرجع الفصل إلى ما حُفظ
-  if (!ok) { if (navigator.onLine === false) st.pending[c] = true; else delete st.picks[c]; }
+  let err = null;
+  const run = st.run[c] = API.saveViolations(st.day, c, marks).then(() => {}, e => { err = e; });
+  await run;
+  delete st.run[c]; delete st.saving[c];
+  // انقطاع: يُعاد مع التغيير التالي أو عودة الاتصال. رفضه الخادم: يرجع الفصل إلى ما حُفظ
+  if (err) { console.error(err); toast(errText(err), {bad:true}); if (refused(err)) delete st.picks[c]; else st.pending[c] = true; }
   await refreshViolations(st.day); renderViolSheet();
-  return !!ok;
+  return !err;
 }
 // مخالفات يوم للاطلاع: مشرف الجناح يرى فصول جناحه، والإدارة كل الفصول
 function openViolView(day){
@@ -926,7 +996,7 @@ document.addEventListener('click', e => {
     case 'late-cls': lateGoto(el.dataset.cls); break;
     case 'late-next': if (LS) lateGoto(LS.classes[LS.classes.indexOf(LS.cur) + 1]); break;
     case 'late-stu': lateToggle(el.dataset.cls, id); break;
-    case 'abs-none': { const c = el.dataset.cls; ABS.picks[c].clear(); queueAbsSave(c, true); if (ABS.cur === c && absNext()) absGoto(absNext()); else renderAbsence(); break; }
+    case 'abs-none': { const c = el.dataset.cls; if (!ABS || ABS.sending) break; ABS.picks[c].clear(); queueAbsSave(c, true); if (ABS.cur === c && absNext()) absGoto(absNext()); else renderAbsence(); break; }
     case 'abs-send': absSend(); break;
     case 'abs-unsend': absUnsend(); break;
     case 'open-absence': openAbsenceView(el.dataset.day); break;
