@@ -704,7 +704,7 @@ const pctOf = (n, d) => d ? (Math.round(n * 1000 / d) / 10) + '%' : '—';
 const absFetched = new Set();   // أيام أقدم من الثلاثين يوماً المحمّلة، تُجلب عند فتحها
 function openAbsenceView(day){
   const w = absScope().wing;
-  openSheet('absview', w ? 'غياب ' + w.name : 'الغياب اليومي', '', `<button class="btn primary block" id="abs-print" data-act="abs-print">طباعة إحصائية هذا اليوم</button>`, {day:today(), loading:false});
+  openSheet('absview', w ? 'غياب ' + w.name : 'الغياب اليومي', '', `<button class="btn primary block" id="abs-print" data-act="abs-print">طباعة الإحصائية أو حفظها PDF</button>${PR_HINT}`, {day:today(), loading:false});
   absGo(day || today());
 }
 async function absGo(day){
@@ -918,46 +918,71 @@ function renderViolView(){
       : `<p class="calm">لا توجد مخالفات زي أو شعر${mine ? ' في جناحك' : ''} في هذا اليوم.</p>`);
 }
 
-// ورقة الطباعة: ملخص اليوم، وجدول الفصول مع أسماء الغائبين، والتوقيع. مشرف الجناح: فصول جناحه وتوقيعه
+/* ورقة الطباعة الموحدة (A4)، تُطبع أو تُحفظ PDF وتُرسل: الترويسة (المدرسة والجهة، والشعار، واليوم والتاريخ) تحتها
+   خطان بلوني الشعار، ثم العنوان ونطاقه، وشريط الأرقام، والأقسام، والتوقيع والختم، وسطر الطباعة. */
+function prSheet(o){
+  const C = window.APP_CONFIG || {};
+  return `<article class="pr">
+    <header class="pr-head">
+      <div class="pr-org"><b class="pr-school">${esc(C.SCHOOL_FULL || C.SCHOOL || '')}</b><span class="pr-sub">${esc(o.unit)}</span></div>
+      <img class="pr-logo" src="icons/logo.png" alt="">
+      <div class="pr-when"><span>${esc(fmtDay(o.day, {weekday:'long'}))}</span><b>${esc(fmtDay(o.day, {day:'numeric', month:'long', year:'numeric'}))}</b></div>
+    </header>
+    <div class="pr-rule"></div>
+    <div class="pr-titlebar"><h1 class="pr-title">${esc(o.title)}</h1><p class="pr-lead">${esc(o.lead)}</p></div>
+    <section class="pr-kpis k${o.kpis.length}">${o.kpis.map(([l, v]) => `<div><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('')}</section>
+    ${o.body}
+    <footer class="pr-sign"><div class="pr-signer"><b>${esc(o.signer)}</b><span>الاسم<i></i></span><span>التوقيع<i></i></span></div><div class="pr-stamp">الختم</div></footer>
+    <p class="pr-printed">طُبعت من سجل الإشراف يوم ${esc(fmtDay(today(), {weekday:'long', day:'numeric', month:'long', year:'numeric'}))} الساعة ${esc(fmtTime(Date.now()))}، بواسطة ${esc(personName(S.uid))}.</p>
+  </article>`;
+}
+// قسم في الورقة: عنوانه وعدده، ثم الجدول أو ملاحظة
+const prSec = (title, n, inner) => `<section class="pr-sec"><h2 class="pr-h2">${esc(title)}${n == null ? '' : `<span class="pr-n">${n}</span>`}</h2>${inner}</section>`;
+const prTable = (heads, rows, last) => `<table class="pr-t"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}${last || ''}</tbody></table>`;
+const prNote = html => `<p class="pr-note">${html}</p>`;
+const PR_DAY = {weekday:'long', day:'numeric', month:'numeric'};
+// إحصائية الغياب اليومي: الملخص، وجدول الفصول مع أسماء الغائبين ومن اعتمده. مشرف الجناح: فصول جناحه وتوقيعه
 function absPrintHtml(day, sent){
-  const C = window.APP_CONFIG || {}, sc = absScope();
-  const total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs;
+  const sc = absScope(), total = sent.reduce((n, x) => n + x.total, 0), abs = absCount(sent), pres = total - abs;
   const missing = sc.all.filter(c => !sent.some(x => x.cls === c));
-  const rows = sent.map(x => `<tr><td>${esc(x.cls)}</td><td>${x.total}</td><td>${x.absent.length}</td><td>${x.total - x.absent.length}</td><td>${pctOf(x.total - x.absent.length, x.total)}</td>
-    <td class="names">${x.absent.length ? `<ol>${x.absent.map(a => `<li>${esc(a.name)}</li>`).join('')}</ol>` : 'لا غياب'}</td><td>${esc(personName(x.sentBy))}</td></tr>`).join('');
-  return `<div class="pr">
-    <header class="pr-h"><img class="pr-logo" src="icons/logo.png" alt="">
-      <div><div class="pr-school">${esc(C.SCHOOL_FULL || C.SCHOOL || '')}</div><div class="pr-sub">${esc(sc.wing ? sc.wing.name : 'شؤون الطلبة')}</div></div>
-      <div class="pr-title"><b>إحصائية الغياب اليومي</b><span>${esc(fmtDay(day, {weekday:'long', day:'numeric', month:'long', year:'numeric'}))}</span></div></header>
-    <section class="pr-sum"><div><span>عدد الطلاب</span><b>${total}</b></div><div><span>الغياب</span><b>${abs}</b></div>
-      <div><span>الحضور</span><b>${pres}</b></div><div><span>نسبة الحضور</span><b>${pctOf(pres, total)}</b></div></section>
-    <table class="pr-t"><thead><tr><th>الفصل</th><th>عدد الطلاب</th><th>الغياب</th><th>الحضور</th><th>نسبة الحضور</th><th>أسماء الغائبين</th><th>المشرف</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><th>المجموع</th><th>${total}</th><th>${abs}</th><th>${pres}</th><th>${pctOf(pres, total)}</th><th colspan="2">${sent.length} ${sent.length === 1 ? 'فصل' : sent.length <= 10 ? 'فصول' : 'فصلاً'}</th></tr></tfoot></table>
-    ${missing.length ? `<p class="pr-miss">${sc.mine ? 'لم يُعتمد غياب' : 'لم يصل غياب'}: ${esc(missing.join('، '))}</p>` : ''}
-    <footer class="pr-f"><div>${sc.wing ? 'مشرف الجناح' : 'مسؤول شؤون الطلبة'}<div class="line"></div></div><div>التوقيع<div class="line"></div></div>
-      <div class="pr-printed">طُبعت من سجل الإشراف في ${esc(fmtDay(today(), {day:'numeric', month:'long', year:'numeric'}))} ${esc(fmtTime(Date.now()))} · ${esc(personName(S.uid))}</div></footer>
-  </div>`;
+  const rows = sent.map(x => `<tr><td class="n"><b>${esc(x.cls)}</b></td><td class="n">${x.total}</td><td class="n">${x.absent.length}</td><td class="n">${x.total - x.absent.length}</td>
+    <td class="n">${pctOf(x.total - x.absent.length, x.total)}</td>
+    <td class="names">${x.absent.length ? `<ol>${x.absent.map(a => `<li>${esc(a.name)}</li>`).join('')}</ol>` : '<span class="pr-mute">لا غياب</span>'}</td><td class="by">${esc(personName(x.sentBy))}</td></tr>`).join('');
+  // المجموع آخر سطر في الجدول (لا يتكرر في كل صفحة كأنه مجموع الصفحة)
+  const foot = `<tr class="tot"><th>المجموع</th><th>${total}</th><th>${abs}</th><th>${pres}</th><th>${pctOf(pres, total)}</th><th colspan="2">${sent.length} ${sent.length === 1 ? 'فصل' : sent.length <= 10 ? 'فصول' : 'فصلاً'}</th></tr>`;
+  return prSheet({
+    unit: sc.wing ? 'إشراف ' + sc.wing.name : 'شؤون الطلبة', day, title: 'إحصائية الغياب اليومي',
+    lead: sc.wing ? `الغياب المعتمد لفصول ${sc.wing.name}` : 'الغياب المعتمد لكل الفصول',
+    kpis: [['عدد الطلاب', total], ['الغياب', abs], ['الحضور', pres], ['نسبة الحضور', pctOf(pres, total)]],
+    body: prSec('الغياب حسب الفصل', null, prTable(['الفصل', 'عدد الطلاب', 'الغياب', 'الحضور', 'نسبة الحضور', 'أسماء الغائبين', 'اعتمده'], rows, foot) +
+      (missing.length ? prNote(`<b>${sc.mine ? 'لم يُعتمد غياب' : 'لم يصل غياب'}:</b> ${esc(missing.join('، '))}`) : '')),
+    signer: sc.wing ? 'مشرف الجناح' : 'مسؤول شؤون الطلبة'
+  });
 }
 // ورقة A4: تُطبع أو تُحفظ PDF من شاشة الطباعة في الجوال أو الكمبيوتر، مرة واحدة بعد تحميل الشعار
-function printHtml(html){
+// اسم الصفحة وقت الطباعة هو اسم ملف PDF عند الحفظ أو المشاركة، ثم يعود
+let prTitle = null;
+const prRestore = () => { if (prTitle != null) { document.title = prTitle; prTitle = null; } };
+function printHtml(html, name){
   const root = $('#print-root');
   root.innerHTML = html;
   document.body.classList.add('printing');
+  prRestore(); prTitle = document.title; document.title = name; setTimeout(prRestore, 20000);
   let done = false;
   const img = root.querySelector('img'), go = () => { if (done) return; done = true; setTimeout(() => { try { window.print(); } catch(e) {} }, 60); };
   if (img && !img.complete) { img.onload = img.onerror = go; setTimeout(go, 1500); } else go();
 }
 function printAbsence(){
-  const day = S.sheet && S.sheet.day, sent = day ? absSent(day) : [];
+  const day = S.sheet && S.sheet.day, sent = day ? absSent(day) : [], w = absScope().wing;
   if (!sent.length) return toast('لا يوجد غياب معتمد لهذا اليوم.', {bad:true});
-  printHtml(absPrintHtml(day, sent));
+  printHtml(absPrintHtml(day, sent), `إحصائية الغياب اليومي ${day}${w ? ' - ' + w.name : ''}`);
 }
 
 /* --- إحصائية المفصولين والاستدعاءات (المشرف العام والوكيل والمدير): للاطلاع، وتسجيل حضور ولي الأمر، والطباعة --- */
+const PR_HINT = '<p class="meta pr-hint">للإرسال: من شاشة الطباعة اضغط زر المشاركة واختر واتساب، أو احفظها PDF ثم أرسل الملف.</p>';
 function openDisc(sec){
   if (!canDisc()) return toast(ERR.not_allowed, {bad:true});
-  openSheet('disc', 'المفصولون والاستدعاءات', '', '<button class="btn primary block" data-act="disc-print">طباعة الإحصائية أو حفظها PDF</button>', {});
+  openSheet('disc', 'المفصولون والاستدعاءات', '', '<button class="btn primary block" data-act="disc-print">طباعة الإحصائية أو حفظها PDF</button>' + PR_HINT, {});
   renderDisc();
   const b = $('#sheetBody'), el = sec && b && $('#ds-' + sec, b);
   if (el && sec !== 'susp') b.scrollTop = Math.max(0, el.offsetTop - 8);
@@ -985,34 +1010,34 @@ function renderDisc(){
       <div class="list">${sums || '<p class="calm">لا يوجد استدعاء ينتظر حضور ولي الأمر.</p>'}</div></section>`;
   body.scrollTop = sc;
 }
-// ورقة الطباعة: الملخص، وجدول المفصولين الآن، وجدول الاستدعاءات (لم يحضر ولي الأمر، ثم المواعيد القادمة)، والتوقيع
+// إحصائية المفصولين والاستدعاءات: الملخص، والمفصولون الآن، والاستدعاءات التي لم يحضر فيها ولي الأمر، ثم المواعيد القادمة
 function discPrintHtml(d){
-  const C = window.APP_CONFIG || {}, t = d.t, D = x => x ? fmtDay(x, {weekday:'long', day:'numeric', month:'numeric'}) : '—';
-  const st = a => a.status === 'absent' ? 'لم يحضر' : !a.summonDate || a.summonDate > t ? 'موعد قادم' : a.summonDate === t ? 'موعدها اليوم' : 'فات الموعد · ' + agoTxt(daysSince(a.summonDate));
-  const sums = d.late.concat(d.absent, d.now, d.soon);
+  const t = d.t, D = x => x ? fmtDay(x, PR_DAY) : '—', at = a => D(a.summonDate) + (a.summonTime ? ' ' + fmtHM(a.summonTime) : '');
+  const ct = a => a.contactedAt ? 'تم' : '—';
+  const st = a => a.status === 'absent' ? 'لم يحضر' : a.summonDate === t ? 'موعده اليوم' : 'فات الموعد ' + agoTxt(daysSince(a.summonDate));
   const sRows = d.susp.map((a, i) => { const n = schoolDayNo(a.suspendFrom, t);
-    return `<tr><td>${i + 1}</td><td class="nm">${esc(stuName(a))}</td><td>${esc(stuCls(a))}</td><td class="l">${esc(a.violation || '—')}</td><td>${esc(D(a.suspendFrom))}</td><td>${esc(D(a.suspendTo))}</td>
-      <td class="n">${n ? n + ' من ' + (a.suspendDays || n) : '—'}</td><td>${a.contactedAt ? 'تم' : '—'}</td></tr>`; }).join('');
-  const mRows = sums.map((a, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(stuName(a))}</td><td>${esc(stuCls(a))}</td><td class="l">${esc(a.violation || '—')}</td>
-      <td>${esc(D(a.summonDate))}${a.summonTime ? ' ' + esc(fmtHM(a.summonTime)) : ''}</td><td>${esc(st(a))}</td><td>${a.contactedAt ? 'تم' : '—'}</td></tr>`).join('');
-  return `<div class="pr">
-    <header class="pr-h"><img class="pr-logo" src="icons/logo.png" alt="">
-      <div><div class="pr-school">${esc(C.SCHOOL_FULL || C.SCHOOL || '')}</div><div class="pr-sub">كل الفصول</div></div>
-      <div class="pr-title"><b>إحصائية المفصولين والاستدعاءات</b><span>${esc(fmtDay(t, {weekday:'long', day:'numeric', month:'long', year:'numeric'}))}</span></div></header>
-    <section class="pr-sum three"><div><span>مفصولون الآن</span><b>${d.susp.length}</b></div><div><span>لم يحضر ولي الأمر حتى الآن</span><b>${d.due}</b></div>
-      <div><span>مواعيد استدعاء قادمة</span><b>${d.soon.length}</b></div></section>
-    <h3 class="pr-h3">المفصولون الآن (لا يحضرون إلى المدرسة)</h3>
-    ${d.susp.length ? `<table class="pr-t"><thead><tr><th>م</th><th>الطالب</th><th>الفصل</th><th>المخالفة</th><th>من</th><th>إلى</th><th>اليوم</th><th>التواصل</th></tr></thead><tbody>${sRows}</tbody></table>`
-      : '<p class="pr-miss">لا يوجد طالب مفصول الآن.</p>'}
-    <h3 class="pr-h3">الاستدعاءات: لم يحضر ولي الأمر حتى الآن${d.soon.length ? '، ثم المواعيد القادمة' : ''}</h3>
-    ${sums.length ? `<table class="pr-t"><thead><tr><th>م</th><th>الطالب</th><th>الفصل</th><th>المخالفة</th><th>الموعد</th><th>الحالة</th><th>التواصل</th></tr></thead><tbody>${mRows}</tbody></table>`
-      : '<p class="pr-miss">لا يوجد استدعاء ينتظر حضور ولي الأمر.</p>'}
-    <footer class="pr-f"><div>${esc(ROLES[myRole()] || '')}<div class="line"></div></div><div>التوقيع<div class="line"></div></div>
-      <div class="pr-printed">طُبعت من سجل الإشراف في ${esc(fmtDay(today(), {day:'numeric', month:'long', year:'numeric'}))} ${esc(fmtTime(Date.now()))} · ${esc(personName(S.uid))}</div></footer>
-  </div>`;
+    return `<tr><td class="n">${i + 1}</td><td class="nm">${esc(stuName(a))}</td><td class="n">${esc(stuCls(a))}</td><td class="l">${esc(a.violation || '—')}</td>
+      <td class="n">${esc(D(a.suspendFrom))}</td><td class="n">${esc(D(a.suspendTo))}</td><td class="n">${n ? n + ' من ' + (a.suspendDays || n) : '—'}</td><td class="n">${ct(a)}</td></tr>`; }).join('');
+  const due = d.late.concat(d.absent, d.now);
+  const mRows = due.map((a, i) => `<tr><td class="n">${i + 1}</td><td class="nm">${esc(stuName(a))}</td><td class="n">${esc(stuCls(a))}</td><td class="l">${esc(a.violation || '—')}</td>
+      <td class="n">${esc(at(a))}</td><td class="l">${esc(st(a))}</td><td class="n">${ct(a)}</td></tr>`).join('');
+  const uRows = d.soon.map((a, i) => `<tr><td class="n">${i + 1}</td><td class="nm">${esc(stuName(a))}</td><td class="n">${esc(stuCls(a))}</td><td class="l">${esc(a.violation || '—')}</td>
+      <td class="n">${esc(at(a))}</td><td class="n">${ct(a)}</td></tr>`).join('');
+  return prSheet({
+    unit: 'مكتب ' + (ROLES[myRole()] || 'الإدارة'), day: t, title: 'إحصائية المفصولين والاستدعاءات', lead: 'حتى تاريخ الطباعة، لكل الفصول',
+    kpis: [['مفصولون الآن', d.susp.length], ['لم يحضر ولي الأمر', d.due], ['مواعيد استدعاء قادمة', d.soon.length]],
+    body: prSec('المفصولون الآن', d.susp.length, d.susp.length
+        ? prTable(['م', 'الطالب', 'الفصل', 'المخالفة', 'من', 'إلى', 'يوم الدوام', 'التواصل'], sRows) + prNote('لا يحضرون إلى المدرسة طوال مدة الفصل.')
+        : prNote('لا يوجد طالب مفصول الآن.')) +
+      prSec('استدعاءات لم يحضر فيها ولي الأمر', d.due, due.length
+        ? prTable(['م', 'الطالب', 'الفصل', 'المخالفة', 'الموعد', 'الحالة', 'التواصل'], mRows)
+        : prNote('لا يوجد استدعاء ينتظر حضور ولي الأمر.')) +
+      (d.soon.length ? prSec('مواعيد استدعاء قادمة', d.soon.length, prTable(['م', 'الطالب', 'الفصل', 'المخالفة', 'الموعد', 'التواصل'], uRows)) : ''),
+    signer: ROLES[myRole()] || ''
+  });
 }
-function printDisc(){ if (canDisc()) printHtml(discPrintHtml(discData())); }
-window.addEventListener('afterprint', () => document.body.classList.remove('printing'));
+function printDisc(){ if (canDisc()) printHtml(discPrintHtml(discData()), 'إحصائية المفصولين والاستدعاءات ' + today()); }
+window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); prRestore(); });
 function openPassword(){
   openSheet('pw', 'تغيير كلمة السر', `<div class="form">${pwField('pw-new', 'كلمة السر الجديدة (8 أحرف على الأقل)', 'new-password')}${pwField('pw-again', 'أعد كتابتها', 'new-password')}<p class="err" id="pw-err" hidden></p></div>`,
     `<button class="btn primary block" data-act="pw-save">حفظ كلمة السر</button>`);
