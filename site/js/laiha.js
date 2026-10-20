@@ -123,8 +123,15 @@ const LAIHA_BY_TEXT = {};
 LAIHA.forEach(x => { LAIHA_BY_TEXT[norm(x.t)] = x; });
 Object.keys(LAIHA_ALIAS).forEach(t => { LAIHA_BY_TEXT[norm(t)] = LAIHA_BY_ID[LAIHA_ALIAS[t]]; });
 
-// البند المقابل لنص المخالفة (أو null إذا كانت غير مصنّفة)
-const laihaOf = text => LAIHA_BY_TEXT[norm(text)] || null;
+// البند المقابل لنص المخالفة (أو null إذا كانت غير مصنّفة). يُحفظ الجواب لكل نص: النصوص بضع عشرات والقيود آلاف،
+// وتوحيد النص (norm) لكل قيد كان أغلب وقت laihaAll في المدارس الكبيرة
+const LAIHA_MEMO = new Map();
+const laihaOf = text => {
+  const k = String(text == null ? '' : text);
+  let x = LAIHA_MEMO.get(k);
+  if (x === undefined) { x = LAIHA_BY_TEXT[norm(k)] || null; LAIHA_MEMO.set(k, x); }
+  return x;
+};
 const lvOf = text => { const x = laihaOf(text); return x ? x.lv : ''; };
 const laihaRef = x => x.lv === 't' ? (x.n ? `المادة السابعة، البند ${x.n}` : 'المادة السابعة') : x.lv === 'e' ? `المادة الثامنة، البند ${x.n}` : `المادة الخامسة، ${LV[x.lv].l}، البند ${x.n}`;
 const lvChip = (lv, long) => lv && LV[lv] ? `<span class="lvchip lv-${lv}">${esc(long ? LV[lv].long : LV[lv].l)}</span>` : '';

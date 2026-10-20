@@ -103,13 +103,15 @@ const S = {
   seenMark:0, audio:null, prefsQ:Promise.resolve()
 };
 
+// مقارن واحد للأسماء بالعربي يُعاد استخدامه: الترتيب نفسه، وأسرع مرتين من localeCompare مع آلاف الطلاب عند كل تغيير
+const AR_COLL = new Intl.Collator('ar');
 let memo = {ver:-1};
 function M(){
   if (memo.ver === S.ver) return memo;
   const list = Object.values(S.actions).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const byStu = {};
   for (const a of list) (byStu[a.studentId] || (byStu[a.studentId] = [])).push(a);
-  const students = Object.values(S.students).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
+  const students = Object.values(S.students).sort((a, b) => AR_COLL.compare(String(a.name || ''), String(b.name || '')));
   const classes = Array.from(new Set(students.map(s => s.cls).filter(Boolean))).sort(clsCmp);
   const demo = {students:students.filter(s => isDemo(s.id)).length, actions:list.filter(a => isDemo(a.id)).length};
   memo = {ver:S.ver, list, byStu, students, classes, demo, ev:null};
