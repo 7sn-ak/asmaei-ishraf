@@ -257,7 +257,7 @@ function renderActionBody(){
     <button class="ad-stu" data-act="open-student" data-id="${esc(a.studentId)}">${esc(stuName(a))}<span>${esc(stuCls(a))}</span></button>
     ${timeBanner(a)}
     <dl class="kv">
-      <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}${lvOf(a.violation) ? ' ' + lvChipOf(a.violation) : ''}</dd></div>
+      <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}${lvChipAct(a) ? ' ' + lvChipAct(a) : ''}</dd></div>
       <div><dt>تاريخ الواقعة</dt><dd>${esc(fmtDay(a.date))}</dd></div>
       ${a.type === 'summon' ? `<div><dt>موعد الحضور</dt><dd>${esc(fmtDay(a.summonDate))}${a.summonTime ? ' · ' + esc(fmtHM(a.summonTime)) : ''}</dd></div>` : ''}
       ${a.type === 'suspend' ? `<div><dt>المدة</dt><dd>${esc(schoolDaysTxt(a.suspendDays || 1))}</dd></div><div><dt>الفترة</dt><dd>${a.suspendFrom === a.suspendTo ? esc(fmtDay(a.suspendFrom)) : esc(fmtDay(a.suspendFrom)) + ' — ' + esc(fmtDay(a.suspendTo))}</dd></div>` : ''}

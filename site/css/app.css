@@ -520,3 +520,5 @@ details.more-box[open]{padding-bottom:12px}
 .ls-t .meta.bad{color:var(--bad)}
 .lv-ico{color:var(--lv-h);background:var(--lv-h-bg)}
 #lh-lv .chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.lc-arrow{color:var(--ink-3);font-weight:700}
+.laiha-sum{display:flex;align-items:center;gap:6px;flex-wrap:wrap}

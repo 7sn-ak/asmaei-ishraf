@@ -405,7 +405,7 @@ const VIEWS = {
       violList().forEach(x => { if (x.day < since) return; VIOL_KEYS.forEach(k => { if (marksOf(x, k).some(a => a.id === id)) dn[k]++; }); });
       // سجل الطالب: الإجراءات، والتأخير الصباحي بتاريخه ومن سجّله، الأحدث أولاً
       const items = acts.map(a => ({t:a.createdAt || 0, html:`<li class="ty-${a.type}"><button class="card" data-act="open-action" data-id="${esc(a.id)}">
-              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}${lvChipOf(a.violation)}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
+              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}${lvChipAct(a)}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
               <span class="what">${esc(a.violation || '—')}</span>
               <span class="meta">سجّله ${esc(personName(a.createdBy))}${a.type==='summon' && a.summonDate ? ' · الموعد ' + esc(dayLabel(a.summonDate)) : ''}${a.type==='suspend' && a.suspendFrom ? ' · ' + esc(daysTxt(a.suspendDays||1)) + '، يبدأ ' + esc(dayLabel(a.suspendFrom)) : ''}</span>
             </button></li>`}))
@@ -426,6 +426,7 @@ const VIEWS = {
         <div class="stats five">${TYPE_KEYS.map(k => `<div class="stat ty-${k}"><span class="lb">${TYPES[k].label}</span><b>${by[k]||0}</b></div>`).join('')}
           <div class="stat ty-late" id="p-late"><span class="lb">تأخير</span><b>${lates.length}</b></div></div>
         ${daily ? `<p class="meta" id="p-daily">الغياب اليومي، آخر 30 يوماً: ${esc(daily)}</p>` : ''}
+        ${laihaSummary(id)}
         ${recent >= 3 ? `<div class="banner warn">${icon('alert')}<div>عدد الإجراءات على هذا الطالب خلال آخر 30 يوماً: ${recent}.</div></div>` : ''}
         ${canRecord() ? `<button class="btn primary block" data-act="record" data-student="${esc(id)}">${icon('plus','sm')}تسجيل إجراء لهذا الطالب</button>` : ''}
         <section class="sec"><div class="sec-h"><h2>سجل الطالب</h2>${items.length ? `<span class="count num">${items.length}</span>` : ''}</div>
