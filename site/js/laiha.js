@@ -154,47 +154,81 @@ const LAIHA_RULES = [
 
 /* ===== إرشاد نموذج التسجيل: المستوى، والإجراء المقترح، والتكرار ===== */
 // القيود السابقة على الطالب من نفس المستوى (الفصل المرفوض لا يُحسب)
+// سجل الطالب: المخالفات السابقة حسب المستوى وحسب البند، وعدد التعهدات والاستدعاءات
+// (الفصل المرفوض لا يُحسب، والاستدعاء يُحسب إذا حلّ موعده أو سُجّلت نتيجته)
 function laihaHistory(studentId){
   const acts = (studentId && M().byStu[studentId]) || [];
-  const by = {}; const same = {};
+  const h = {by:{}, same:{}, pledges:0, summons:0, medSummons:0};
   acts.forEach(a => {
     if (a.type === 'suspend' && a.status === 'rejected') return;
-    const x = laihaOf(a.violation); if (!x) return;
-    by[x.lv] = (by[x.lv] || 0) + 1; same[x.id] = (same[x.id] || 0) + 1;
+    const x = laihaOf(a.violation);
+    if (a.type === 'pledge') h.pledges++;
+    if (a.type === 'summon' && (a.status !== 'scheduled' || (a.summonDate || '') <= today())) { h.summons++; if (x && x.lv === 'm') h.medSummons++; }
+    if (!x) return;
+    h.by[x.lv] = (h.by[x.lv] || 0) + 1; h.same[x.id] = (h.same[x.id] || 0) + 1;
   });
-  return {by, same};
+  return h;
 }
 const NEXT_LV = {s:'m', m:'h', h:'g'};
-// يرجع {x, lv, suggest, notes:[{tone, html}]} لنص المخالفة وسجل الطالب
+// هل تُعامل المخالفة كتكرار يرفعها للمستوى التالي (المادة الثانية)؟
+// البسيطة والشديدة: مخالفة سابقة من نفس المستوى. المتوسطة: لها إجراءان، فترتفع بعد مخالفتين متوسطتين سابقتين،
+// أو بعد مخالفة متوسطة سابقة استُدعي فيها ولي الأمر (أي طُبّق الإجراء الثاني ووقّع على الإنذار).
+function laihaEscalates(lv, h){
+  const prev = h.by[lv] || 0;
+  if (!prev || !NEXT_LV[lv]) return false;
+  if (lv === 'm') return prev >= 2 || h.medSummons >= 1;
+  return true;
+}
+const plural = (n, one, two, many) => n === 1 ? one : n === 2 ? two : n + ' ' + many;
+// يرجع {x, lv, eff, suggest, why, notes:[{tone, html}]} لنص المخالفة وسجل الطالب
 function laihaGuide(text, studentId){
   const x = laihaOf(text);
   if (!x) return null;
-  const hist = laihaHistory(studentId), prev = hist.by[x.lv] || 0, prevSame = hist.same[x.id] || 0;
+  const h = laihaHistory(studentId), prev = h.by[x.lv] || 0, prevSame = h.same[x.id] || 0;
   const notes = [];
   let suggest = {s:'pledge', m:'pledge', h:'summon', g:'suspend', t:'report', e:'report'}[x.lv];
-  let why = {s:'تعهد خطي واستدعاء ولي الأمر بعد استنفاد النصح والتنبيه الشفهي',
-             m:'الإجراء الأول: تعهد خطي من الطالب', h:'إشعار ولي الأمر بالحضور وإحالة الطالب للجنة الانضباط',
+  let why = {s:'تعهد خطي بعد استنفاد النصح والتنبيه الشفهي، مع استدعاء ولي الأمر عند الحاجة',
+             m:'الإجراء الأول: تعهد خطي من الطالب، لأنه لا توجد عليه مخالفة متوسطة سابقة', h:'إشعار ولي الأمر بالحضور وإحالة الطالب للجنة الانضباط',
              g:'يعرضها مجلس النظام المدرسي، والحرمان حتى 5 أيام', t:'توثيق الواقعة بتقرير وعرضها على مجلس النظام',
              e:'إبلاغ الإدارة بتقرير بعد التنبيه داخل الحصة'}[x.lv];
-  if (x.lv === 'm' && prev === 1) { suggest = 'summon'; why = 'الإجراء الثاني: استدعاء ولي الأمر وتعهد بصيغة إنذار، لأن على الطالب مخالفة متوسطة سابقة'; }
-  if (prev && NEXT_LV[x.lv] && (x.lv !== 'm' || prev >= 2)) {
-    const nx = NEXT_LV[x.lv];
-    notes.push({tone:'warn', html:`<b>تكرار:</b> ${prev === 1 ? 'على الطالب مخالفة ' + LV[x.lv].l + ' سابقة' : 'عدد المخالفات ال' + LV[x.lv].l + ' السابقة على الطالب: ' + prev}. حسب المادة الثانية تُطبَّق العقوبة التالية الأشد، فتُعامل كـ<b>مخالفة ${LV[nx].l}</b> (تكرار مخالفة ${LV[x.lv].l}) وجهتها ${LV[nx].who}.`});
-    if (nx === 'h') { suggest = 'summon'; why = 'تكرار المتوسطة يُحال للجنة الانضباط مع إشعار ولي الأمر'; }
-    if (nx === 'g') { suggest = 'suspend'; why = 'تكرار الشديدة يُعرض على مجلس النظام'; }
+  const many = h.pledges >= 2;  // استنفد مرحلة التعهد
+  const eff = laihaEscalates(x.lv, h) ? NEXT_LV[x.lv] : x.lv;
+  if (eff === 's' && h.pledges >= 1) { suggest = 'summon'; why = 'سبق أن وقّع الطالب تعهداً، فالخطوة التالية في المخالفة البسيطة استدعاء ولي الأمر وخطة لتعديل السلوك'; }
+  if (eff === 'm' && x.lv === 'm' && (prev === 1 || many)) {
+    suggest = 'summon';
+    why = prev === 1 ? 'الإجراء الثاني: استدعاء ولي الأمر وتعهد بصيغة إنذار، لأن على الطالب مخالفة متوسطة سابقة'
+                     : 'الإجراء الثاني: استدعاء ولي الأمر وتعهد بصيغة إنذار، لأن الطالب استنفد مرحلة التعهد';
+  }
+  if (eff === 'm' && x.lv === 's') {
+    suggest = many ? 'summon' : 'pledge';
+    why = many ? 'تُعامل كمتوسطة، والطالب استنفد مرحلة التعهد: الإجراء الثاني استدعاء ولي الأمر وتعهد بصيغة إنذار'
+               : 'تُعامل كمتوسطة: الإجراء الأول تدوين المخالفة من مشرف الجناح وتعهد خطي من الطالب';
+  }
+  if (eff !== x.lv) {
+    const reason = x.lv === 'm' && h.medSummons && prev < 2
+      ? 'على الطالب مخالفة متوسطة سابقة استُدعي فيها ولي أمره (الإجراء الثاني)'
+      : (prev === 1 ? 'على الطالب مخالفة ' + LV[x.lv].l + ' سابقة' : 'عدد المخالفات ال' + LV[x.lv].l + ' السابقة على الطالب: ' + prev);
+    notes.push({tone:'warn', html:`<b>تكرار:</b> ${reason}. حسب المادة الثانية تُطبَّق العقوبة التالية الأشد، فتُعامل كـ<b>مخالفة ${LV[eff].l}</b> (تكرار مخالفة ${LV[x.lv].l}) وجهتها ${LV[eff].who}.`});
+    if (eff === 'h') { suggest = 'summon'; why = 'تكرار المتوسطة يُحال للجنة الانضباط مع إشعار ولي الأمر'; }
+    if (eff === 'g') { suggest = 'suspend'; why = 'تكرار الشديدة يُعرض على مجلس النظام'; }
+  }
+  if (h.pledges || h.summons) {
+    const parts = [h.pledges ? plural(h.pledges, 'تعهد واحد', 'تعهدان', 'تعهدات') : '', h.summons ? plural(h.summons, 'استدعاء واحد لولي الأمر', 'استدعاءان لولي الأمر', 'استدعاءات لولي الأمر') : ''].filter(Boolean).join(' و');
+    notes.push({tone: many && (x.lv === 's' || x.lv === 'm') ? 'warn' : 'info',
+      html:`<b>سجل الطالب:</b> عليه ${parts}.${many && (x.lv === 's' || x.lv === 'm') ? ' استنفد مرحلة التعهد، فلا يُكتفى بتعهد جديد.' : ''}`});
   }
   if (prevSame) notes.push({tone:'info', html:prevSame === 1 ? 'سُجّلت نفس المخالفة على الطالب مرة سابقة.' : `عدد مرات تسجيل نفس المخالفة على الطالب سابقاً: ${prevSame}.`});
   if (x.note) notes.push({tone:'info', html:esc(x.note)});
   if (x.sp) notes.push({tone:'bad', html:`<b>${esc(LAIHA_SPECIAL[x.sp].h)}:</b> ${LAIHA_SPECIAL[x.sp].steps.map(esc).join(' ')} ${esc(LAIHA_SPECIAL_RULE)}`});
-  return {x, lv:x.lv, suggest, why, notes, prev};
+  return {x, lv:x.lv, eff, suggest, why, notes, prev};
 }
-// تنبيه مدة الفصل حسب المستوى (يرجع نص التنبيه أو '')
+// تنبيه مدة الفصل حسب المستوى بعد احتساب التكرار (يرجع نص التنبيه أو '')
 function laihaDaysWarn(text, studentId, days){
   const g = laihaGuide(text, studentId); if (!g) return '';
-  const lv = (g.prev && NEXT_LV[g.lv] && (g.lv !== 'm' || g.prev >= 2)) ? NEXT_LV[g.lv] : g.lv;
+  const lv = g.eff;
   if (lv === 's') return 'الحرمان من الدراسة ليس من إجراءات المخالفات البسيطة في اللائحة.';
   if (lv === 'm') return 'الحرمان من الدراسة ليس من إجراءات المخالفات المتوسطة في اللائحة.';
-  if (LV[lv].days && days > LV[lv].days) return `الحد الأقصى للحرمان من الدراسة في ${LV[lv].long === 'مخالفة شديدة' ? 'المخالفة الشديدة' : 'المخالفة الجسيمة'}: ${daysTxt(LV[lv].days)} (المادة الخامسة).`;
+  if (LV[lv].days && days > LV[lv].days) return `الحد الأقصى للحرمان من الدراسة في ${lv === 'h' ? 'المخالفة الشديدة' : 'المخالفة الجسيمة'}: ${daysTxt(LV[lv].days)} (المادة الخامسة).`;
   return '';
 }
 function laihaCard(text, studentId){
