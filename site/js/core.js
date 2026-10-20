@@ -225,7 +225,7 @@ function actLine(a){
 function actRow(a){
   const cls = stuCls(a);
   return `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico(a.type)}
-    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${rowPill(a)}${lvChipOf(a.violation)}${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
+    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${rowPill(a)}${lvChipAct(a)}${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
     <span class="when">${esc(rel(a.createdAt))}</span></button>`;
 }
 

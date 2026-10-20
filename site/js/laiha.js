@@ -154,73 +154,110 @@ const LAIHA_RULES = [
 
 /* ===== إرشاد نموذج التسجيل: المستوى، والإجراء المقترح، والتكرار ===== */
 // القيود السابقة على الطالب من نفس المستوى (الفصل المرفوض لا يُحسب)
-// سجل الطالب: المخالفات السابقة حسب المستوى وحسب البند، وعدد التعهدات والاستدعاءات
-// (الفصل المرفوض لا يُحسب، والاستدعاء يُحسب إذا حلّ موعده أو سُجّلت نتيجته)
-function laihaHistory(studentId){
-  const acts = (studentId && M().byStu[studentId]) || [];
-  const h = {by:{}, same:{}, pledges:0, summons:0, medSummons:0};
-  acts.forEach(a => {
-    if (a.type === 'suspend' && a.status === 'rejected') return;
-    const x = laihaOf(a.violation);
-    if (a.type === 'pledge') h.pledges++;
-    if (a.type === 'summon' && (a.status !== 'scheduled' || (a.summonDate || '') <= today())) { h.summons++; if (x && x.lv === 'm') h.medSummons++; }
-    if (!x) return;
-    h.by[x.lv] = (h.by[x.lv] || 0) + 1; h.same[x.id] = (h.same[x.id] || 0) + 1;
-  });
-  return h;
-}
+// ===== سجل الطالب حسب اللائحة =====
+// تُقرأ قيود الطالب بترتيب تسجيلها، ولكل قيد «المستوى الذي عومل به»: مستوى المخالفة نفسها، أو أعلى منه إذا كان تكراراً
+// (المادة الثانية: عند التكرار تُطبَّق العقوبة التالية الأشد). المخالفات المسجلة في نفس اليوم تُحسب تكراراً أيضاً.
+// البسيطة ترتفع درجة واحدة فقط (تكرار المشكلة البسيطة = متوسطة). المتوسطة والشديدة يتراكم تصعيدهما:
+// متوسطة بعد متوسطتين سابقتين أو بعد متوسطة استُدعي فيها ولي الأمر = شديدة، وشديدة بعد شديدة سابقة = جسيمة.
 const NEXT_LV = {s:'m', m:'h', h:'g'};
-// هل تُعامل المخالفة كتكرار يرفعها للمستوى التالي (المادة الثانية)؟
-// البسيطة والشديدة: مخالفة سابقة من نفس المستوى. المتوسطة: لها إجراءان، فترتفع بعد مخالفتين متوسطتين سابقتين،
-// أو بعد مخالفة متوسطة سابقة استُدعي فيها ولي الأمر (أي طُبّق الإجراء الثاني ووقّع على الإنذار).
-function laihaEscalates(lv, h){
-  const prev = h.by[lv] || 0;
-  if (!prev || !NEXT_LV[lv]) return false;
-  if (lv === 'm') return prev >= 2 || h.medSummons >= 1;
+const newState = () => ({raw:{}, eff:{}, same:{}, pledges:0, summons:0, medSummons:0});
+function laihaEscalates(L, st){
+  const n = st.eff[L] || 0;
+  if (!n || !NEXT_LV[L]) return false;
+  if (L === 'm') return n >= 2 || st.medSummons >= 1;
   return true;
 }
+// المستوى الذي تُعامل به مخالفة جديدة (x) على طالب حالته st
+function laihaStep(x, st){
+  if (x.lv === 's') return (st.raw.s || 0) >= 1 ? 'm' : 's';
+  if (x.lv !== 'm' && x.lv !== 'h') return x.lv;
+  let L = x.lv;
+  while (laihaEscalates(L, st)) L = NEXT_LV[L];
+  return L;
+}
+// يضيف قيداً إلى حالة الطالب (الفصل المرفوض لا يُحسب، والاستدعاء يُحسب إذا حلّ موعده أو سُجّلت نتيجته)
+function laihaApply(a, x, eff, st){
+  if (a.type === 'suspend' && a.status === 'rejected') return;
+  if (a.type === 'pledge') st.pledges++;
+  const summoned = a.type === 'summon' && (a.status !== 'scheduled' || (a.summonDate || '') <= today());
+  if (summoned) { st.summons++; if (eff === 'm') st.medSummons++; }
+  if (!x) return;
+  st.raw[x.lv] = (st.raw[x.lv] || 0) + 1; st.eff[eff] = (st.eff[eff] || 0) + 1; st.same[x.id] = (st.same[x.id] || 0) + 1;
+}
+// لكل الطلاب: حالة كل طالب، ومستوى كل قيد بعد احتساب التكرار. تُحسب مرة لكل تغيّر في البيانات
+let LMEMO = {ver:-1};
+function laihaAll(){
+  const m = M();
+  if (LMEMO.ver === m.ver) return LMEMO;
+  const st = {}, eff = {};
+  for (const sid in m.byStu) {
+    const s = newState();
+    m.byStu[sid].slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach(a => {
+      const x = laihaOf(a.violation), e = x ? laihaStep(x, s) : '';
+      if (x) eff[a.id] = {base:x.lv, eff:e};
+      laihaApply(a, x, e, s);
+    });
+    st[sid] = s;
+  }
+  LMEMO = {ver:m.ver, st, eff};
+  return LMEMO;
+}
+const laihaState = sid => (sid && laihaAll().st[sid]) || newState();
+// شارة القيد: مستوى معاملته، مع «تكرار» إذا ارتفع عن مستوى المخالفة نفسها
+function lvChipAct(a){
+  const r = laihaAll().eff[a.id];
+  if (!r) return '';
+  if (r.eff === r.base) return lvChip(r.eff);
+  return `<span class="lvchip lv-${r.eff}" title="${esc('المخالفة ' + LV[r.base].l + '، وعوملت كـ' + LV[r.eff].l + ' لأنها تكرار')}">${esc(LV[r.eff].l)} · تكرار</span>`;
+}
+// ملخص ملف الطالب: عدد القيود بكل مستوى بعد احتساب التكرار
+function laihaSummary(sid){
+  const s = laihaState(sid), keys = LV_KEYS.filter(k => s.eff[k]);
+  if (!keys.length) return '';
+  return `<div class="laiha-sum"><span class="meta">حسب اللائحة:</span>${keys.map(k => `<span class="lvchip lv-${k}">${esc(LV[k].l)} ${s.eff[k]}</span>`).join('')}</div>`;
+}
 const plural = (n, one, two, many) => n === 1 ? one : n === 2 ? two : n + ' ' + many;
-// يرجع {x, lv, eff, suggest, why, notes:[{tone, html}]} لنص المخالفة وسجل الطالب
+// يرجع {x, lv, eff, suggest, label, why, notes:[{tone, html}]} لنص المخالفة وسجل الطالب
 function laihaGuide(text, studentId){
   const x = laihaOf(text);
   if (!x) return null;
-  const h = laihaHistory(studentId), prev = h.by[x.lv] || 0, prevSame = h.same[x.id] || 0;
+  const st = laihaState(studentId), eff = laihaStep(x, st), prevSame = st.same[x.id] || 0, many = st.pledges >= 2;
   const notes = [];
-  let suggest = {s:'pledge', m:'pledge', h:'summon', g:'suspend', t:'report', e:'report'}[x.lv];
-  let why = {s:'تعهد خطي بعد استنفاد النصح والتنبيه الشفهي، مع استدعاء ولي الأمر عند الحاجة',
-             m:'الإجراء الأول: تعهد خطي من الطالب، لأنه لا توجد عليه مخالفة متوسطة سابقة', h:'إشعار ولي الأمر بالحضور وإحالة الطالب للجنة الانضباط',
-             g:'يعرضها مجلس النظام المدرسي، والحرمان حتى 5 أيام', t:'توثيق الواقعة بتقرير وعرضها على مجلس النظام',
-             e:'إبلاغ الإدارة بتقرير بعد التنبيه داخل الحصة'}[x.lv];
-  const many = h.pledges >= 2;  // استنفد مرحلة التعهد
-  const eff = laihaEscalates(x.lv, h) ? NEXT_LV[x.lv] : x.lv;
-  if (eff === 's' && h.pledges >= 1) { suggest = 'summon'; why = 'سبق أن وقّع الطالب تعهداً، فالخطوة التالية في المخالفة البسيطة استدعاء ولي الأمر وخطة لتعديل السلوك'; }
-  if (eff === 'm' && x.lv === 'm' && (prev === 1 || many)) {
-    suggest = 'summon';
-    why = prev === 1 ? 'الإجراء الثاني: استدعاء ولي الأمر وتعهد بصيغة إنذار، لأن على الطالب مخالفة متوسطة سابقة'
-                     : 'الإجراء الثاني: استدعاء ولي الأمر وتعهد بصيغة إنذار، لأن الطالب استنفد مرحلة التعهد';
-  }
-  if (eff === 'm' && x.lv === 's') {
-    suggest = many ? 'summon' : 'pledge';
-    why = many ? 'تُعامل كمتوسطة، والطالب استنفد مرحلة التعهد: الإجراء الثاني استدعاء ولي الأمر وتعهد بصيغة إنذار'
-               : 'تُعامل كمتوسطة: الإجراء الأول تدوين المخالفة من مشرف الجناح وتعهد خطي من الطالب';
-  }
+  let suggest, why;
+  if (eff === 's') {
+    suggest = st.pledges ? 'summon' : 'pledge';
+    why = st.pledges ? 'سبق أن وقّع الطالب تعهداً، فالخطوة التالية في المخالفة البسيطة استدعاء ولي الأمر وخطة لتعديل السلوك'
+                     : 'تعهد خطي بعد استنفاد النصح والتنبيه الشفهي، مع استدعاء ولي الأمر عند الحاجة';
+  } else if (eff === 'm') {
+    const second = (st.eff.m || 0) >= 1 || many;
+    suggest = second ? 'summon' : 'pledge';
+    why = second ? 'الإجراء الثاني للمتوسطة: استدعاء ولي الأمر من المدير المساعد وتعهد بصيغة إنذار، ' + ((st.eff.m || 0) >= 1 ? 'لأن على الطالب مخالفة متوسطة سابقة' : 'لأن الطالب استنفد مرحلة التعهد')
+                 : 'الإجراء الأول للمتوسطة: تدوين المخالفة من مشرف الجناح وتعهد خطي من الطالب';
+  } else if (eff === 'h') { suggest = 'summon'; why = 'إشعار ولي الأمر بالحضور وإحالة الطالب للجنة الانضباط السلوكي، والحرمان حتى 3 أيام بقرارها'; }
+  else if (eff === 'g') { suggest = 'suspend'; why = 'يعرضها مجلس النظام المدرسي: حرمان حتى 5 أيام، أو نقل، أو فصل في الثانوية'; }
+  else if (eff === 't') { suggest = 'report'; why = 'توثيق الواقعة بتقرير وعرضها على مجلس النظام المدرسي'; }
+  else { suggest = 'report'; why = 'إبلاغ الإدارة بتقرير بعد التنبيه داخل الحصة'; }
+  const label = suggest === 'summon' && eff === 'h' ? 'استدعاء ولي الأمر وإحالة للجنة الانضباط'
+    : suggest === 'suspend' && eff === 'g' ? 'فصل بقرار مجلس النظام'
+    : suggest === 'report' && eff === 't' ? 'تقرير يُعرض على مجلس النظام' : TYPES[suggest].long;
   if (eff !== x.lv) {
-    const reason = x.lv === 'm' && h.medSummons && prev < 2
-      ? 'على الطالب مخالفة متوسطة سابقة استُدعي فيها ولي أمره (الإجراء الثاني)'
-      : (prev === 1 ? 'على الطالب مخالفة ' + LV[x.lv].l + ' سابقة' : 'عدد المخالفات ال' + LV[x.lv].l + ' السابقة على الطالب: ' + prev);
-    notes.push({tone:'warn', html:`<b>تكرار:</b> ${reason}. حسب المادة الثانية تُطبَّق العقوبة التالية الأشد، فتُعامل كـ<b>مخالفة ${LV[eff].l}</b> (تكرار مخالفة ${LV[x.lv].l}) وجهتها ${LV[eff].who}.`});
-    if (eff === 'h') { suggest = 'summon'; why = 'تكرار المتوسطة يُحال للجنة الانضباط مع إشعار ولي الأمر'; }
-    if (eff === 'g') { suggest = 'suspend'; why = 'تكرار الشديدة يُعرض على مجلس النظام'; }
+    const reason = eff === 'm' ? `على الطالب ${plural(st.raw.s, 'مخالفة بسيطة سابقة', 'مخالفتان بسيطتان سابقتان', 'مخالفات بسيطة سابقة')} (تكرار المشكلة البسيطة)`
+      : eff === 'g' ? `على الطالب ${plural(st.eff.h, 'مخالفة سابقة مصنفة شديدة', 'مخالفتان سابقتان مصنفتان شديدة', 'مخالفات سابقة مصنفة شديدة')}، فهذا تكرار للشديدة`
+      : (st.eff.m >= 2 ? `على الطالب ${plural(st.eff.m, '', 'مخالفتان متوسطتان سابقتان', 'مخالفات متوسطة سابقة')}` : 'على الطالب مخالفة متوسطة سابقة استُدعي فيها ولي أمره (الإجراء الثاني)') + '، فهذا تكرار للمتوسطة';
+    notes.push({tone:'warn', html:`<b>تكرار:</b> ${esc(reason)}. حسب المادة الثانية تُطبَّق العقوبة التالية الأشد، فتُعامل كـ<b>مخالفة ${LV[eff].l}</b> وجهتها ${esc(LV[eff].who)}.`});
   }
-  if (h.pledges || h.summons) {
-    const parts = [h.pledges ? plural(h.pledges, 'تعهد واحد', 'تعهدان', 'تعهدات') : '', h.summons ? plural(h.summons, 'استدعاء واحد لولي الأمر', 'استدعاءان لولي الأمر', 'استدعاءات لولي الأمر') : ''].filter(Boolean).join(' و');
-    notes.push({tone: many && (x.lv === 's' || x.lv === 'm') ? 'warn' : 'info',
-      html:`<b>سجل الطالب:</b> عليه ${parts}.${many && (x.lv === 's' || x.lv === 'm') ? ' استنفد مرحلة التعهد، فلا يُكتفى بتعهد جديد.' : ''}`});
+  const hist = [st.pledges ? plural(st.pledges, 'تعهد واحد', 'تعهدان', 'تعهدات') : '', st.summons ? plural(st.summons, 'استدعاء واحد لولي الأمر', 'استدعاءان لولي الأمر', 'استدعاءات لولي الأمر') : ''].filter(Boolean);
+  // تصنيف المخالفات السابقة بعد احتساب التكرار (من اختصاص لجنة الانضباط أو مجلس النظام)
+  const refs = [st.eff.h ? `شديدة ${st.eff.h}` : '', st.eff.g ? `جسيمة ${st.eff.g}` : '', st.eff.t ? `تجاه المعلمين ${st.eff.t}` : ''].filter(Boolean);
+  if (hist.length || refs.length) {
+    const exhausted = many && (eff === 's' || eff === 'm');
+    notes.push({tone: exhausted || refs.length ? 'warn' : 'info',
+      html:`<b>سجل الطالب:</b> ${hist.length ? 'عليه ' + hist.join(' و') + '.' : ''}${refs.length ? ' مخالفاته السابقة المصنفة بعد احتساب التكرار: ' + refs.join('، ') + '.' : ''}${exhausted ? ' استنفد مرحلة التعهد، فلا يُكتفى بتعهد جديد.' : ''}`});
   }
   if (prevSame) notes.push({tone:'info', html:prevSame === 1 ? 'سُجّلت نفس المخالفة على الطالب مرة سابقة.' : `عدد مرات تسجيل نفس المخالفة على الطالب سابقاً: ${prevSame}.`});
   if (x.note) notes.push({tone:'info', html:esc(x.note)});
   if (x.sp) notes.push({tone:'bad', html:`<b>${esc(LAIHA_SPECIAL[x.sp].h)}:</b> ${LAIHA_SPECIAL[x.sp].steps.map(esc).join(' ')} ${esc(LAIHA_SPECIAL_RULE)}`});
-  return {x, lv:x.lv, eff, suggest, why, notes, prev};
+  return {x, lv:x.lv, eff, suggest, label, why, notes};
 }
 // تنبيه مدة الفصل حسب المستوى بعد احتساب التكرار (يرجع نص التنبيه أو '')
 function laihaDaysWarn(text, studentId, days){
@@ -238,14 +275,15 @@ function laihaCard(text, studentId){
     return `<div class="laiha-card lv-o"><div class="lc-h"><span class="lvchip lv-o">غير مصنفة</span><span class="lc-ref">لا يصنّفها الفصل الثاني من اللائحة</span></div>
       <p class="lc-p">الغياب والامتحانات لها لوائحها. وأي مخالفة لم يرد بشأنها نص تُرفع إلى مدير الشؤون التعليمية بالمنطقة (المادة الثانية).</p></div>`;
   }
-  const L = LV[g.lv];
-  return `<div class="laiha-card lv-${g.lv}">
-    <div class="lc-h">${lvChip(g.lv, true)}<span class="lc-ref">${esc(laihaRef(g.x))}</span></div>
+  const L = LV[g.eff], up = g.eff !== g.lv;
+  return `<div class="laiha-card lv-${g.eff}">
+    <div class="lc-h">${lvChip(g.lv, true)}${up ? `<span class="lc-arrow" aria-hidden="true">←</span>${lvChip(g.eff)}<span class="lc-ref">تُعامل كـ${esc(L.l)} لأنها تكرار</span>` : ''}</div>
+    <div class="lc-ref">${esc(laihaRef(g.x))}</div>
     <div class="lc-row"><span class="lc-k">الجهة</span><span>${esc(L.who)}</span></div>
     <div class="lc-row"><span class="lc-k">الحد الأقصى</span><span>${esc(L.max)}</span></div>
     <details class="lc-steps"><summary>الإجراء حسب اللائحة</summary><ol>${L.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></details>
     ${g.notes.map(n => `<div class="banner ${n.tone === 'info' ? '' : n.tone}">${icon(n.tone === 'info' ? 'info' : 'alert')}<div>${n.html}</div></div>`).join('')}
-    <div class="lc-sug"><span class="lc-k">المقترح</span><button type="button" class="tchip ty-${g.suggest}" data-act="r-type" data-t="${g.suggest}" aria-pressed="${R && R.type === g.suggest}">${esc(TYPES[g.suggest].long)}</button><span class="lc-why">${esc(g.why)}</span></div>
+    <div class="lc-sug"><span class="lc-k">المقترح</span><button type="button" class="tchip ty-${g.suggest}" data-act="r-type" data-t="${g.suggest}" aria-pressed="${R && R.type === g.suggest}">${esc(g.label)}</button><span class="lc-why">${esc(g.why)}</span></div>
   </div>`;
 }
 
