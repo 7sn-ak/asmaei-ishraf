@@ -107,8 +107,9 @@ function openRecord(o){
     <div class="field"><span class="lbl" id="r-type-l">نوع الإجراء</span>
       <div class="tpick" role="group" aria-labelledby="r-type-l">${TYPE_KEYS.map(k => `<button type="button" class="ty-${k}" data-act="r-type" data-t="${k}" aria-pressed="${R.type===k}">${tico(k,true)}${TYPES[k].long}</button>`).join('')}</div></div>
     <div class="field"><label for="r-vio">المخالفة</label>
-      <select id="r-vio"><option value="">اختر المخالفة</option>${VIOLATIONS.map(v => `<option>${esc(v)}</option>`).join('')}<option value="__other">أخرى…</option></select>
+      <select id="r-vio"><option value="">اختر المخالفة</option>${laihaOptions()}<option value="__other">أخرى…</option></select>
       <input id="r-other" placeholder="اكتب المخالفة" hidden></div>
+    <div id="r-laiha"></div>
     <div class="field"><label for="r-date">تاريخ الواقعة</label><input id="r-date" type="date" value="${today()}" max="${today()}"></div>
     <div id="r-extra" class="form"></div>
     <div class="field"><label for="r-det">التفاصيل <span class="opt">(اختياري)</span></label><textarea id="r-det" rows="3" placeholder="ماذا حدث، وأين، ومن شهد الواقعة"></textarea></div>
@@ -130,7 +131,7 @@ function renderRStu(){
       <datalist id="r-cls-list">${M().classes.map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
     renderRRes();
   }
-  renderRHint();
+  renderRHint(); renderRLaiha();
 }
 function renderRRes(){
   const res = $('#r-res'); if (!res) return;
@@ -150,6 +151,12 @@ function renderRHint(){
   const sus = activeSusp(R.studentId);
   box.innerHTML = `<div class="banner">${icon('info')}<div>سجله السابق: ${TYPE_KEYS.filter(k => by[k]).map(k => `${TYPES[k].label} ${by[k]}`).join(' · ')}${sus ? ` — مفصول حالياً حتى ${esc(fmtDay(sus.suspendTo))}` : ''}</div></div>`;
 }
+// بطاقة «حسب اللائحة» تحت المخالفة: المستوى والجهة والإجراء المقترح وتنبيه التكرار (js/laiha.js)
+function renderRLaiha(){
+  const box = $('#r-laiha'), sel = $('#r-vio'); if (!box || !sel || !R) return;
+  box.innerHTML = laihaCard(sel.value, R.studentId);
+  if (R.type === 'suspend') updRange();
+}
 function renderRExtra(){
   const t = R.type, ex = $('#r-extra'); if (!ex) return;
   $$('#sheet [data-act="r-type"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === t)));
@@ -162,7 +169,7 @@ function renderRExtra(){
   if (t === 'pledge') h = `<p class="note">بعد أن يوقّع الطالب على التعهد، افتح القيد واضغط «تم توقيع التعهد».</p>`;
   ex.innerHTML = h;
   if (t === 'suspend') updRange();
-  setSaveLabel(); renderRHint();
+  setSaveLabel(); renderRHint(); renderRLaiha();
 }
 function setSaveLabel(){
   const b = $('#r-save'); if (!b) return;
@@ -173,6 +180,8 @@ function updRange(){
   const n = +($('#r-days') || {}).value || 1, f = ($('#r-from') || {}).value || nextSchoolDay(), out = $('#r-range');
   if (!out) return;
   out.textContent = `من ${fmtDay(firstSchoolDay(f))} حتى ${fmtDay(schoolEnd(f, n))}، والعدّ بالأيام الدراسية دون الجمعة والسبت.` + (isApprover() ? ' يُعتمد مباشرة لأنك ' + ROLES[myRole()] + '.' : ' يحتاج اعتماد المدير أو الوكيل أو المشرف العام.');
+  const w = R ? laihaDaysWarn(($('#r-vio') || {}).value, R.studentId, n) : '';
+  if (w) { const b = document.createElement('b'); b.className = 'lc-warn'; b.textContent = 'حسب اللائحة: ' + w; out.appendChild(b); }
 }
 async function saveRecord(){
   const err = $('#r-err');
@@ -248,7 +257,7 @@ function renderActionBody(){
     <button class="ad-stu" data-act="open-student" data-id="${esc(a.studentId)}">${esc(stuName(a))}<span>${esc(stuCls(a))}</span></button>
     ${timeBanner(a)}
     <dl class="kv">
-      <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}</dd></div>
+      <div><dt>المخالفة</dt><dd>${esc(a.violation || '—')}${lvOf(a.violation) ? ' ' + lvChipOf(a.violation) : ''}</dd></div>
       <div><dt>تاريخ الواقعة</dt><dd>${esc(fmtDay(a.date))}</dd></div>
       ${a.type === 'summon' ? `<div><dt>موعد الحضور</dt><dd>${esc(fmtDay(a.summonDate))}${a.summonTime ? ' · ' + esc(fmtHM(a.summonTime)) : ''}</dd></div>` : ''}
       ${a.type === 'suspend' ? `<div><dt>المدة</dt><dd>${esc(schoolDaysTxt(a.suspendDays || 1))}</dd></div><div><dt>الفترة</dt><dd>${a.suspendFrom === a.suspendTo ? esc(fmtDay(a.suspendFrom)) : esc(fmtDay(a.suspendFrom)) + ' — ' + esc(fmtDay(a.suspendTo))}</dd></div>` : ''}
@@ -1118,6 +1127,7 @@ document.addEventListener('click', e => {
     case 'uncontact': markContact(id, false); break;
     case 'act-del': delAction(id); break;
     case 'r-type': R.type = el.dataset.t; renderRExtra(); break;
+    case 'lh-lv': LQ.lv = el.dataset.lv; renderLaihaList(); break;
     case 'r-pick': R.studentId = id; R.isNew = false; renderRStu(); break;
     case 'r-clear': R.studentId = ''; R.q = ''; R.isNew = false; renderRStu(); setTimeout(() => { const q = $('#r-q'); if (q) q.focus(); }, 30); break;
     case 'r-new': R.isNew = true; renderRRes(); $('#r-new').hidden = false; $('#r-newname').value = R.q.trim(); $('#r-newcls').focus(); break;
@@ -1178,11 +1188,12 @@ document.addEventListener('input', e => {
   if (k === 'log-q' || k === 'stu-q') { S.f[k === 'log-q' ? 'log' : 'stu'].q = e.target.value; clearTimeout(inputTimer); inputTimer = setTimeout(update, 140); }
   else if (k === 'r-q') { R.q = e.target.value; R.isNew = false; const n = $('#r-new'); if (n) n.hidden = true; renderRRes(); }
   else if (k === 'imp') impSummary();
+  else if (k === 'laiha-q') { LQ.q = e.target.value; clearTimeout(inputTimer); inputTimer = setTimeout(renderLaihaList, 120); }
 });
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'l-cls') { S.f.log.cls = el.value; S.f.log.limit = 120; update(); }
-  else if (el.id === 'r-vio') { const o = $('#r-other'); o.hidden = el.value !== '__other'; if (!o.hidden) o.focus(); }
+  else if (el.id === 'r-vio') { const o = $('#r-other'); o.hidden = el.value !== '__other'; if (!o.hidden) o.focus(); renderRLaiha(); }
   else if (el.id === 'r-days' || el.id === 'r-from') updRange();
   else if (el.id === 'abs-date') absGo(el.value);
 });

@@ -405,7 +405,7 @@ const VIEWS = {
       violList().forEach(x => { if (x.day < since) return; VIOL_KEYS.forEach(k => { if (marksOf(x, k).some(a => a.id === id)) dn[k]++; }); });
       // سجل الطالب: الإجراءات، والتأخير الصباحي بتاريخه ومن سجّله، الأحدث أولاً
       const items = acts.map(a => ({t:a.createdAt || 0, html:`<li class="ty-${a.type}"><button class="card" data-act="open-action" data-id="${esc(a.id)}">
-              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
+              <span class="top">${tchip(a.type)}${pill(a)}${CONTACT_TYPES.includes(a.type) ? contactPill(a) : ''}${lvChipOf(a.violation)}<span class="grow"></span><span class="day">${esc(dayLabel(a.date))}</span></span>
               <span class="what">${esc(a.violation || '—')}</span>
               <span class="meta">سجّله ${esc(personName(a.createdBy))}${a.type==='summon' && a.summonDate ? ' · الموعد ' + esc(dayLabel(a.summonDate)) : ''}${a.type==='suspend' && a.suspendFrom ? ' · ' + esc(daysTxt(a.suspendDays||1)) + '، يبدأ ' + esc(dayLabel(a.suspendFrom)) : ''}</span>
             </button></li>`}))
@@ -486,6 +486,7 @@ const VIEWS = {
           <button class="row" data-act="pw-open">${icon('edit','sm')}<span class="main"><span class="t1">تغيير كلمة السر</span></span></button>
           <button class="row" data-act="signout" data-confirm="اضغط مرة أخرى لتسجيل الخروج">${icon('back','sm')}<span class="main"><span class="t1">تسجيل الخروج</span></span></button>
         </section>
+        <section class="list"><button class="row" data-act="go" data-v="laiha"><span class="tico lv-ico">${icon('report','sm')}</span><span class="main"><span class="t1">اللائحة: تصنيف المخالفات</span><span class="t2 wrap">مستوى أي مخالفة والإجراء المتعيّن لها في المرحلة الثانوية</span></span></button></section>
         ${wingsSection()}
         <section class="sec"><div class="sec-h"><h2>الطاقم</h2><span class="count num">${shown.length}</span>${admin ? `<button class="link" data-act="staff-new">+ إضافة عضو</button>` : ''}</div>
           <div class="list">${shown.map(id => { const st = S.staff[id]; const inner = `<span class="avatar">${esc(initial(st.name))}</span>
