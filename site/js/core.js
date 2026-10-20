@@ -139,8 +139,16 @@ const supsOf = id => Object.values(S.staff).filter(s => s.role === 'supervisor' 
 const canWings = () => OVERSEERS.includes(myRole()) || canAdmin();
 // جناح المشرف وفصوله (غير المشرف يرى كل الفصول، ومشرف بلا جناح أو جناحه بلا فصول يرى كل الفصول)
 const myWing = () => { const m = me(); return m && m.role === 'supervisor' ? wingOf(m) : null; };
-const myClasses = () => { const w = myWing(); return w && w.classes.length ? w.classes.slice().sort(clsCmp) : null; };
-const inScope = a => { const c = myClasses(); return !c || c.includes(stuCls(a)); };
+// تُحسب مرة لكل تغيير في البيانات أو الحساب (كانت تُرتَّب عند كل قيد، فتبطئ الرئيسية مع كثرة القيود والفصول)
+let mycl = {ver:-1, uid:null, v:null, set:null};
+const myClasses = () => {
+  if (mycl.ver !== S.ver || mycl.uid !== S.uid) {
+    const w = myWing(), v = w && w.classes.length ? Object.freeze(w.classes.slice().sort(clsCmp)) : null;
+    mycl = {ver:S.ver, uid:S.uid, v, set:v ? new Set(v) : null};
+  }
+  return mycl.v;
+};
+const inScope = a => { myClasses(); return !mycl.set || mycl.set.has(stuCls(a)); };
 function prefs(){
   const d = S.prefsDoc || {};
   return {notify:!!d.notify, sound:!!d.sound, lastSeen:d.lastSeen || S.loadAt, types:Object.assign({}, DEFAULT_TYPES, d.types || {})};
@@ -459,7 +467,18 @@ document.addEventListener('pointerdown', () => {
 
 /* ===== الغياب اليومي ===== */
 const absList = () => Object.values(S.absence);
-const absSheet = (day, cls) => absList().find(x => x.day === day && x.cls === cls);
+/* فهارس الأوراق اليومية (الغياب والتأخير والمخالفات) باليوم والفصل، والطلاب بالفصل: تُبنى مرة واحدة لكل تغيير في
+   البيانات (S.ver)، بدل البحث في كل الأوراق عند كل سؤال (كان كشف الجناح الكبير يبطؤ مع كثرة الفصول والأيام) */
+let sidx = {ver:-1};
+function SIDX(){
+  if (sidx.ver === S.ver) return sidx;
+  const byKey = o => { const m = new Map(); for (const k in o) { const x = o[k]; m.set(x.day + '|' + x.cls, x); } return m; };
+  const byCls = new Map();
+  for (const st of M().students) { const l = byCls.get(st.cls); if (l) l.push(st); else byCls.set(st.cls, [st]); }
+  sidx = {ver:S.ver, abs:byKey(S.absence), late:byKey(S.late), viol:byKey(S.violations), byCls};
+  return sidx;
+}
+const absSheet = (day, cls) => SIDX().abs.get(day + '|' + cls);
 const absCount = sheets => sheets.reduce((n, x) => n + x.absent.length, 0);
 // مخالفات الزي والشعر: يسجلها المشرف العام وحده، ويصل إشعارها لمشرف جناح الطالب فقط (private.viol_kinds())
 const VIOLS = {uniform:{l:'الزي', g:'مخالفة الزي'}, hair:{l:'الشعر', g:'مخالفة الشعر'}};
@@ -473,7 +492,7 @@ const mkTag = k => k === 'absent' ? '<span class="mk mk-absent">غائب</span>'
   : `<span class="mk mk-${k}">${esc((VIOLS[k] || {}).l || '')}</span>`;
 /* ===== التأخير الصباحي: خانة منفصلة عن الغياب، يُحفظ في سجل الطالب ولا يُرسل لأحد ===== */
 const lateList = () => Object.values(S.late);
-const lateSheet = (day, cls) => lateList().find(x => x.day === day && x.cls === cls);
+const lateSheet = (day, cls) => SIDX().late.get(day + '|' + cls);
 const lateIdsOf = (day, cls) => new Set(((lateSheet(day, cls) || {}).late || []).map(e => e.id));
 // تأخير الطالب في سجله: الأيام الثلاثون المحمّلة، وما قبلها يُجلب عند فتح ملفه
 function lateEntries(id){
@@ -492,11 +511,11 @@ function fetchLateOf(id){
 }
 // أسماء الغائبين تحت بعض: سطر لكل اسم
 const nameLines = (list, empty) => list.length ? list.map(a => `<span class="nl">${esc(a.name)}</span>`).join('') : esc(empty);
-const rosterOf = cls => M().students.filter(s => s.cls === cls);
+const rosterOf = cls => (SIDX().byCls.get(cls) || []).slice();
 /* ===== مخالفات الزي والشعر ===== */
 const canViol = () => myRole() === 'head';
 const violList = () => Object.values(S.violations);
-const violSheet = (day, cls) => violList().find(x => x.day === day && x.cls === cls);
+const violSheet = (day, cls) => SIDX().viol.get(day + '|' + cls);
 const violCountOf = x => VIOL_KEYS.reduce((n, k) => n + marksOf(x, k).length, 0);
 // «الزي 1 · الشعر 2»
 const violSummary = x => VIOL_KEYS.map(k => marksOf(x, k).length ? VIOLS[k].l + ' ' + marksOf(x, k).length : '').filter(Boolean).join(' · ');
