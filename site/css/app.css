@@ -481,3 +481,42 @@ details.more-box[open]{padding-bottom:12px}
 
 /* الشبكات ذات العمود الواحد: العمود بعرض الحاوية دائماً، فلا يوسّعه رابط أو اسم طويل بلا مسافات */
 .stack,.stack-s,.sheet-b,.sheet-f,.form,.field,.abs-nav,.cred,.results,.abs-list,.tl,.kv{grid-template-columns:minmax(0,1fr)}
+
+/* ===== اللائحة: مستويات المخالفات (js/laiha.js) ===== */
+:root{
+  --lv-s:#1C7543; --lv-s-bg:#DFF1E6; --lv-m:#8A5A00; --lv-m-bg:#FBEDD3; --lv-h:#B5470F; --lv-h-bg:#FCE6D8;
+  --lv-g:#B02218; --lv-g-bg:#FBE3E0; --lv-t:#3B4252; --lv-t-bg:#E4E7ED; --lv-e:#2A43B3; --lv-e-bg:#E5E9FA; --lv-o:#5D687D; --lv-o-bg:#EAEDF2;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --lv-s:#62D192; --lv-s-bg:#11301E; --lv-m:#F1C35C; --lv-m-bg:#33280E; --lv-h:#FF9F66; --lv-h-bg:#3A2213;
+  --lv-g:#FF8B80; --lv-g-bg:#3A1917; --lv-t:#C9D0DE; --lv-t-bg:#262D3B; --lv-e:#93A6FF; --lv-e-bg:#1D2647; --lv-o:#9BA5B7; --lv-o-bg:#222A39 }}
+:root[data-theme="dark"]{
+  --lv-s:#62D192; --lv-s-bg:#11301E; --lv-m:#F1C35C; --lv-m-bg:#33280E; --lv-h:#FF9F66; --lv-h-bg:#3A2213;
+  --lv-g:#FF8B80; --lv-g-bg:#3A1917; --lv-t:#C9D0DE; --lv-t-bg:#262D3B; --lv-e:#93A6FF; --lv-e-bg:#1D2647; --lv-o:#9BA5B7; --lv-o-bg:#222A39 }
+.lv-s{--lc:var(--lv-s);--lcb:var(--lv-s-bg)} .lv-m{--lc:var(--lv-m);--lcb:var(--lv-m-bg)} .lv-h{--lc:var(--lv-h);--lcb:var(--lv-h-bg)}
+.lv-g{--lc:var(--lv-g);--lcb:var(--lv-g-bg)} .lv-t{--lc:var(--lv-t);--lcb:var(--lv-t-bg)} .lv-e{--lc:var(--lv-e);--lcb:var(--lv-e-bg)} .lv-o{--lc:var(--lv-o);--lcb:var(--lv-o-bg)}
+.lvchip{display:inline-block;font-size:12.5px;font-weight:700;line-height:1.5;padding:0 8px;border-radius:6px;white-space:nowrap;color:var(--lc);background:var(--lcb);border:1px solid color-mix(in srgb,var(--lc) 35%,transparent);vertical-align:1px}
+.t2 .lvchip{margin-inline-end:6px}
+.kv dd .lvchip{margin-inline-start:4px}
+.laiha-card,.laiha-sec{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--rule);border-inline-start:4px solid var(--lc);border-radius:var(--r-m);background:var(--sheet)}
+.lc-h,.ls-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lc-ref{font-size:13px;color:var(--ink-3)}
+.lc-row{display:grid;grid-template-columns:6.5em minmax(0,1fr);gap:8px;font-size:14.5px}
+.lc-k{color:var(--ink-3);font-size:13.5px}
+.lc-p{font-size:14.5px;color:var(--ink-2)}
+.lc-steps summary{cursor:pointer;font-weight:600;color:var(--lc);min-height:34px;display:flex;align-items:center}
+.lc-steps ol{margin:4px 0 0;padding-inline-start:20px;display:grid;gap:4px;font-size:14px;color:var(--ink-2)}
+.laiha-card .banner{font-size:14px;padding:9px 12px}
+.lc-sug{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px dashed var(--rule)}
+.lc-sug .tchip{cursor:pointer;min-height:32px}
+.lc-sug .tchip[aria-pressed="true"]{box-shadow:0 0 0 2px var(--c)}
+.lc-why{font-size:13px;color:var(--ink-2);flex-basis:100%}
+.lc-warn{display:block;margin-top:6px;color:var(--bad)}
+.ls-items{list-style:none;margin:0;padding:0;display:grid;border-top:1px solid var(--rule)}
+.ls-items li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--rule)}
+.ls-items li:last-child{border-bottom:0;padding-bottom:0}
+.ls-n{min-width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none;font-size:12.5px;font-weight:700;color:var(--lc);background:var(--lcb)}
+.ls-t{display:grid;gap:2px;font-weight:500}
+.ls-t .meta.bad{color:var(--bad)}
+.lv-ico{color:var(--lv-h);background:var(--lv-h-bg)}
+#lh-lv .chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}

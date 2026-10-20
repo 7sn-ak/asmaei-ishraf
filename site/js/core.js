@@ -47,7 +47,7 @@ const MANAGERS = ['principal','vp','head','affairs']; // يديرون قوائم
 const RECORDERS = ['supervisor','head','vp','principal']; // يسجلون الإجراءات ويغيّرون حالاتها
 const CONTACTORS = ['affairs','head','vp','principal'];   // يسجلون التواصل مع ولي الأمر (ومعهم مسؤول الموقع)
 const CONTACT_TYPES = ['summon','suspend'];               // الإجراءات التي يُتواصل فيها مع ولي الأمر
-const VIOLATIONS = ['التأخر الصباحي','الغياب بدون عذر','الهروب من الحصة','الخروج من المدرسة دون إذن','إثارة الفوضى في الفصل','عدم الالتزام بالزي المدرسي','استخدام الهاتف النقال','ألفاظ غير لائقة','الاعتداء على زميل','مشاجرة','الإساءة لمعلم أو موظف','إتلاف ممتلكات المدرسة','التدخين','الغش في الاختبار'];
+// قائمة المخالفات وتصنيفها حسب اللائحة التنظيمية في js/laiha.js (LAIHA و LAIHA_OTHER)
 const DEFAULT_TYPES = {pledge:true, summon:true, suspend:true};
 // أنواع يمكن التنبيه عنها (التقارير لا تُرسل لأحد)
 const NOTIFY_TYPES = ['pledge','summon','suspend'];
@@ -225,7 +225,7 @@ function actLine(a){
 function actRow(a){
   const cls = stuCls(a);
   return `<button class="row" data-act="open-action" data-id="${esc(a.id)}">${tico(a.type)}
-    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${rowPill(a)}${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
+    <span class="main"><span class="t1">${esc(stuName(a))}</span><span class="t2">${rowPill(a)}${lvChipOf(a.violation)}${esc(actLine(a))}${cls ? ' · ' + esc(cls) : ''}</span></span>
     <span class="when">${esc(rel(a.createdAt))}</span></button>`;
 }
 
@@ -579,7 +579,7 @@ function syncNav(){
   $('.rec', nav).hidden = !rec;
 }
 function markNav(){
-  const cur = S.view === 'student' ? ({log:'log', home:'home'}[S.params.from] || 'students') : S.view;
+  const cur = S.view === 'student' ? ({log:'log', home:'home'}[S.params.from] || 'students') : S.view === 'laiha' ? 'more' : S.view;
   $$('#nav [data-tab]').forEach(b => { if (b.dataset.tab === cur) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
 }
 function refreshBadge(){
